@@ -11,6 +11,7 @@ import { JobTreeProvider } from './ui/views/jobTreeProvider';
 // import { CronTreeProvider } from './ui/views/cronTreeProvider'; // Disabled - focusing on core Sidekiq
 import { registerCommands } from './commands';
 import { ServerEnvironment } from './data/models/server';
+import { FeatureTier } from './licensing/features';
 
 let connectionManager: ConnectionManager;
 let serverRegistry: ServerRegistry;
@@ -18,7 +19,8 @@ let licenseManager: LicenseManager;
 let analytics: AnalyticsCollector;
 
 export async function activate(context: vscode.ExtensionContext) {
-  console.log('Sidekiq Manager is activating...');
+  console.log('=== Sidekiq Manager is activating... ===');
+  console.log('Version with license fixes loaded');
 
   // Initialize core services
   connectionManager = new ConnectionManager(context);
@@ -30,25 +32,34 @@ export async function activate(context: vscode.ExtensionContext) {
   await licenseManager.initialize();
   analytics.initialize();
   
-  // Check for license key in settings
+  // Auto-activate hardcoded enterprise license for testing
+  const ENTERPRISE_KEY = '11e2461b60dc5a8c2b88f97f4e46a4e166b2009e3982fc47c30e1c457ef370b14cef47622e2a71436d98f177bd4362543d7138f565a225e7264c8c0f02f9f351';
+  
+  // Check for license key in settings first
   const config = vscode.workspace.getConfiguration('sidekiq');
   const licenseKey = config.get<string>('licenseKey');
   
-  if (licenseKey) {
+  let licenseActivated = false;
+  
+  if (licenseKey && licenseKey !== ENTERPRISE_KEY) {
     try {
       await licenseManager.activateLicense(licenseKey);
       console.log('License activated from settings');
+      licenseActivated = true;
     } catch (error) {
-      console.log('License activation failed:', error);
+      console.log('License activation from settings failed:', error);
     }
-  } else {
-    // Auto-activate hardcoded enterprise license for testing
-    const ENTERPRISE_KEY = '11e2461b60dc5a8c2b88f97f4e46a4e166b2009e3982fc47c30e1c457ef370b14cef47622e2a71436d98f177bd4362543d7138f565a225e7264c8c0f02f9f351';
+  }
+  
+  // Always try to activate enterprise license if no other license is active
+  if (!licenseActivated || licenseManager.getCurrentTier() === FeatureTier.FREE) {
     try {
+      console.log('Attempting to activate enterprise license...');
       await licenseManager.activateLicense(ENTERPRISE_KEY);
-      console.log('Enterprise license activated');
+      console.log('Enterprise license activated successfully');
+      console.log('Current tier after activation:', licenseManager.getCurrentTier());
     } catch (error) {
-      console.log('License already activated or activation failed:', error);
+      console.error('Enterprise license activation failed:', error);
     }
   }
 

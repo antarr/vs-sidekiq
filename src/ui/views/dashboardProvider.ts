@@ -3,7 +3,7 @@ import { ConnectionManager } from '../../core/connectionManager';
 import { LicenseManager } from '../../licensing/licenseManager';
 import { ServerConfig } from '../../data/models/server';
 import { SidekiqClient } from '../../core/sidekiqClient';
-import { FeatureTier } from '../../licensing/features';
+import { FeatureTier, TIER_NAMES } from '../../licensing/features';
 
 export class DashboardProvider {
   private panel: vscode.WebviewPanel | undefined;
@@ -74,7 +74,7 @@ export class DashboardProvider {
     const stats = await this.sidekiqClient.getStats(server);
     const queues = await this.sidekiqClient.getQueues(server);
     const tier = this.licenseManager.getCurrentTier();
-    const tierName = tier.charAt(0).toUpperCase() + tier.slice(1);
+    const tierName = TIER_NAMES[tier];
     
     // Calculate total enqueued across all queues
     const totalEnqueued = queues.reduce((sum, q) => sum + q.size, 0);

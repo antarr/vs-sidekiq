@@ -20,8 +20,10 @@ export class LicenseManager {
   }
 
   async initialize(): Promise<void> {
+    console.log('Initializing license manager...');
     // Load license from secure storage
     const key = await this.context.secrets.get('sidekiq.licenseKey');
+    console.log('Stored license key found:', key ? key.substring(0, 10) + '...' : 'none');
     if (key) {
       try {
         await this.activateLicense(key);
@@ -29,6 +31,7 @@ export class LicenseManager {
         console.error('Failed to activate stored license:', error);
       }
     }
+    console.log('License manager initialization complete. Current tier:', this.getCurrentTier());
   }
 
   async activateLicense(key: string): Promise<void> {
@@ -48,8 +51,10 @@ export class LicenseManager {
       // Notify UI to refresh
       vscode.commands.executeCommand('sidekiq.refreshUI');
       
+      console.log(`License activated successfully: ${license.tier} tier for ${license.email}`);
       vscode.window.showInformationMessage(`License activated: ${license.tier} tier`);
     } catch (error: any) {
+      console.error('License activation failed:', error);
       throw new Error(`Invalid license: ${error.message}`);
     }
   }
@@ -153,7 +158,12 @@ export class LicenseManager {
     // Hardcoded enterprise key for all features
     const ENTERPRISE_KEY = '11e2461b60dc5a8c2b88f97f4e46a4e166b2009e3982fc47c30e1c457ef370b14cef47622e2a71436d98f177bd4362543d7138f565a225e7264c8c0f02f9f351';
     
+    console.log(`Validating license key: ${key.substring(0, 10)}...`);
+    console.log(`Expected enterprise key: ${ENTERPRISE_KEY.substring(0, 10)}...`);
+    console.log(`Key match: ${key === ENTERPRISE_KEY}`);
+    
     if (key === ENTERPRISE_KEY) {
+      console.log('Enterprise license key validated successfully');
       return {
         key,
         tier: FeatureTier.ENTERPRISE,
