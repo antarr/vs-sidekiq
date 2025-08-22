@@ -313,9 +313,9 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
     })
   );
 
-  // View job command
+  // View job command - now just shows details without actions
   context.subscriptions.push(
-    vscode.commands.registerCommand('sidekiq.viewJob', async (job: any, category: string) => {
+    vscode.commands.registerCommand('sidekiq.viewJob', async (job: any, _category: string) => {
       ctx.analytics.trackCommand('sidekiq.viewJob', true);
       
       const activeServer = ctx.serverRegistry.getActiveServer();
@@ -324,26 +324,68 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
         return;
       }
       
-      // Show job details
+      // Just show job details
       const message = `Job: ${job.class}\nQueue: ${job.queue}\nID: ${job.id}`;
-      const action = await vscode.window.showInformationMessage(
-        message,
-        'Retry',
-        'Delete',
-        'Close'
-      );
-      
-      if (action === 'Retry') {
-        vscode.commands.executeCommand('sidekiq.retryJob', job, category);
-      } else if (action === 'Delete') {
-        vscode.commands.executeCommand('sidekiq.deleteJob', job, category);
+      if (job.errorMessage) {
+        vscode.window.showErrorMessage(`${message}\n\nError: ${job.errorMessage}`);
+      } else {
+        vscode.window.showInformationMessage(message);
       }
     })
   );
 
-  // Retry job command
+  // View job details command - for double-click
   context.subscriptions.push(
-    vscode.commands.registerCommand('sidekiq.retryJob', async (job: any, _category: string) => {
+    vscode.commands.registerCommand('sidekiq.viewJobDetails', async (job: any, category: string) => {
+      ctx.analytics.trackCommand('sidekiq.viewJobDetails', true);
+      
+      const activeServer = ctx.serverRegistry.getActiveServer();
+      if (!activeServer) {
+        vscode.window.showWarningMessage('No server connected');
+        return;
+      }
+      
+      // Create a detailed view of the job
+      const lines = [
+        `**Job Class:** ${job.class}`,
+        `**Job ID:** ${job.id}`,
+        `**Queue:** ${job.queue}`,
+        `**Category:** ${category}`,
+        `**Created:** ${job.createdAt?.toLocaleString() || 'N/A'}`
+      ];
+      
+      if (job.scheduledAt) {
+        lines.push(`**Scheduled At:** ${job.scheduledAt.toLocaleString()}`);
+      }
+      if (job.retriedAt) {
+        lines.push(`**Retry At:** ${job.retriedAt.toLocaleString()}`);
+      }
+      if (job.failedAt) {
+        lines.push(`**Failed At:** ${job.failedAt.toLocaleString()}`);
+      }
+      if (job.retryCount !== undefined) {
+        lines.push(`**Retry Count:** ${job.retryCount}`);
+      }
+      if (job.errorMessage) {
+        lines.push(`**Error:** ${job.errorMessage}`);
+      }
+      if (job.errorClass) {
+        lines.push(`**Error Class:** ${job.errorClass}`);
+      }
+      
+      lines.push('', `**Arguments:**`, '```json', JSON.stringify(job.args, null, 2), '```');
+      
+      // Show in output channel for better formatting
+      const outputChannel = vscode.window.createOutputChannel('Sidekiq Job Details');
+      outputChannel.clear();
+      outputChannel.appendLine(lines.join('\n'));
+      outputChannel.show();
+    })
+  );
+
+  // Retry job command - handles both single and multi-select from context menu
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sidekiq.retryJob', async (...args: any[]) => {
       ctx.analytics.trackCommand('sidekiq.retryJob', true);
       
       const activeServer = ctx.serverRegistry.getActiveServer();
@@ -352,27 +394,73 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
         return;
       }
       
-      try {
-        const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
-        await client.retryJob(activeServer, job);
-        vscode.window.showInformationMessage('Job retried successfully');
-        
-        // Refresh all relevant views
-        ctx.jobTreeProvider.refresh();
-        ctx.queueTreeProvider.refresh();
-        ctx.workerTreeProvider.refresh();
-        
-        // Also refresh dashboard if open
-        vscode.commands.executeCommand('sidekiq.refreshUI');
-      } catch (error: any) {
-        vscode.window.showErrorMessage(`Failed to retry job: ${error.message}`);
+      // Handle both old single-item and new multi-select formats
+      let items: any[] = [];
+      if (args.length === 2 && Array.isArray(args[1])) {
+        // New format: (item, allSelectedItems)
+        items = args[1];
+      } else if (args.length === 1) {
+        // Old format: single item
+        items = [args[0]];
       }
+      
+      if (items.length === 0) {
+        return;
+      }
+      
+      const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
+      
+      if (items.length === 1) {
+        // Single item
+        const job = items[0].job || items[0];
+        try {
+          await client.retryJob(activeServer, job);
+          vscode.window.showInformationMessage('Job retried successfully');
+        } catch (error: any) {
+          vscode.window.showErrorMessage(`Failed to retry job: ${error.message}`);
+        }
+      } else {
+        // Multiple items
+        const confirm = await vscode.window.showWarningMessage(
+          `Retry ${items.length} job(s)?`,
+          'Yes',
+          'No'
+        );
+        
+        if (confirm === 'Yes') {
+          let successCount = 0;
+          let failCount = 0;
+          
+          for (const treeItem of items) {
+            const job = treeItem.job || treeItem;
+            try {
+              await client.retryJob(activeServer, job);
+              successCount++;
+            } catch (error) {
+              failCount++;
+              console.error(`Failed to retry job ${job.id}:`, error);
+            }
+          }
+          
+          if (failCount === 0) {
+            vscode.window.showInformationMessage(`Successfully retried ${successCount} job(s)`);
+          } else {
+            vscode.window.showWarningMessage(`Retried ${successCount} job(s), ${failCount} failed`);
+          }
+        }
+      }
+      
+      // Refresh all relevant views
+      ctx.jobTreeProvider.refresh();
+      ctx.queueTreeProvider.refresh();
+      ctx.workerTreeProvider.refresh();
+      vscode.commands.executeCommand('sidekiq.refreshUI');
     })
   );
 
-  // Delete job command
+  // Delete job command - handles both single and multi-select from context menu
   context.subscriptions.push(
-    vscode.commands.registerCommand('sidekiq.deleteJob', async (job: any, category: string) => {
+    vscode.commands.registerCommand('sidekiq.deleteJob', async (...args: any[]) => {
       ctx.analytics.trackCommand('sidekiq.deleteJob', true);
       
       const activeServer = ctx.serverRegistry.getActiveServer();
@@ -381,8 +469,192 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
         return;
       }
       
+      // Handle both old single-item and new multi-select formats
+      let items: any[] = [];
+      if (args.length === 2 && Array.isArray(args[1])) {
+        // New format: (item, allSelectedItems)
+        items = args[1];
+      } else if (args.length === 1) {
+        // Old format: single item
+        items = [args[0]];
+      }
+      
+      if (items.length === 0) {
+        return;
+      }
+      
+      const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
+      
+      const confirmMessage = items.length === 1 
+        ? `Delete job ${items[0].job?.id || items[0].id}?`
+        : `Delete ${items.length} job(s)?`;
+      
       const confirm = await vscode.window.showWarningMessage(
-        `Delete job ${job.id}?`,
+        confirmMessage,
+        'Yes',
+        'No'
+      );
+      
+      if (confirm === 'Yes') {
+        let successCount = 0;
+        let failCount = 0;
+        
+        for (const treeItem of items) {
+          const job = treeItem.job || treeItem;
+          const category = treeItem.category || 'dead';
+          
+          try {
+            await client.deleteJob(activeServer, job, category as any);
+            successCount++;
+          } catch (error) {
+            failCount++;
+            console.error(`Failed to delete job ${job.id}:`, error);
+          }
+        }
+        
+        if (items.length === 1) {
+          if (successCount === 1) {
+            vscode.window.showInformationMessage('Job deleted successfully');
+          } else {
+            vscode.window.showErrorMessage('Failed to delete job');
+          }
+        } else {
+          if (failCount === 0) {
+            vscode.window.showInformationMessage(`Successfully deleted ${successCount} job(s)`);
+          } else {
+            vscode.window.showWarningMessage(`Deleted ${successCount} job(s), ${failCount} failed`);
+          }
+        }
+      }
+      
+      // Refresh all relevant views
+      ctx.jobTreeProvider.refresh();
+      ctx.queueTreeProvider.refresh();
+      ctx.workerTreeProvider.refresh();
+      vscode.commands.executeCommand('sidekiq.refreshUI');
+    })
+  );
+
+  // Retry selected jobs command - bulk operation
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sidekiq.retrySelectedJobs', async (item: any, items: any[]) => {
+      ctx.analytics.trackCommand('sidekiq.retrySelectedJobs', true);
+      
+      const activeServer = ctx.serverRegistry.getActiveServer();
+      if (!activeServer) {
+        vscode.window.showWarningMessage('No server connected');
+        return;
+      }
+      
+      // Use all selected items or fall back to single item
+      const selectedItems = items && items.length > 0 ? items : [item];
+      
+      const confirm = await vscode.window.showWarningMessage(
+        `Retry ${selectedItems.length} job(s)?`,
+        'Yes',
+        'No'
+      );
+      
+      if (confirm === 'Yes') {
+        let successCount = 0;
+        let failCount = 0;
+        
+        const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
+        
+        for (const treeItem of selectedItems) {
+          const job = treeItem.job || treeItem;
+          try {
+            await client.retryJob(activeServer, job);
+            successCount++;
+          } catch (error) {
+            failCount++;
+            console.error(`Failed to retry job ${job.id}:`, error);
+          }
+        }
+        
+        if (failCount === 0) {
+          vscode.window.showInformationMessage(`Successfully retried ${successCount} job(s)`);
+        } else {
+          vscode.window.showWarningMessage(`Retried ${successCount} job(s), ${failCount} failed`);
+        }
+        
+        // Refresh views
+        ctx.jobTreeProvider.refresh();
+        ctx.queueTreeProvider.refresh();
+        ctx.workerTreeProvider.refresh();
+        vscode.commands.executeCommand('sidekiq.refreshUI');
+      }
+    })
+  );
+
+  // Delete selected jobs command - bulk operation
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sidekiq.deleteSelectedJobs', async (item: any, items: any[]) => {
+      ctx.analytics.trackCommand('sidekiq.deleteSelectedJobs', true);
+      
+      const activeServer = ctx.serverRegistry.getActiveServer();
+      if (!activeServer) {
+        vscode.window.showWarningMessage('No server connected');
+        return;
+      }
+      
+      // Use all selected items or fall back to single item
+      const selectedItems = items && items.length > 0 ? items : [item];
+      
+      const confirm = await vscode.window.showWarningMessage(
+        `Delete ${selectedItems.length} job(s)?`,
+        'Yes',
+        'No'
+      );
+      
+      if (confirm === 'Yes') {
+        let successCount = 0;
+        let failCount = 0;
+        
+        const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
+        
+        for (const treeItem of selectedItems) {
+          const job = treeItem.job || treeItem;
+          const category = treeItem.category || 'dead';
+          try {
+            await client.deleteJob(activeServer, job, category as any);
+            successCount++;
+          } catch (error) {
+            failCount++;
+            console.error(`Failed to delete job ${job.id}:`, error);
+          }
+        }
+        
+        if (failCount === 0) {
+          vscode.window.showInformationMessage(`Successfully deleted ${successCount} job(s)`);
+        } else {
+          vscode.window.showWarningMessage(`Deleted ${successCount} job(s), ${failCount} failed`);
+        }
+        
+        // Refresh views
+        ctx.jobTreeProvider.refresh();
+        ctx.queueTreeProvider.refresh();
+        ctx.workerTreeProvider.refresh();
+        vscode.commands.executeCommand('sidekiq.refreshUI');
+      }
+    })
+  );
+
+  // Clear queue command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sidekiq.clearQueue', async (item: any) => {
+      ctx.analytics.trackCommand('sidekiq.clearQueue', true);
+      
+      const activeServer = ctx.serverRegistry.getActiveServer();
+      if (!activeServer) {
+        vscode.window.showWarningMessage('No server connected');
+        return;
+      }
+      
+      const queue = item.queue || item;
+      
+      const confirm = await vscode.window.showWarningMessage(
+        `Clear all jobs from queue "${queue.name}"? This cannot be undone.`,
         'Yes',
         'No'
       );
@@ -390,20 +662,28 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
       if (confirm === 'Yes') {
         try {
           const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
-          await client.deleteJob(activeServer, job, category as any);
-          vscode.window.showInformationMessage('Job deleted successfully');
+          await client.clearQueue(activeServer, queue.name);
+          vscode.window.showInformationMessage(`Queue "${queue.name}" cleared successfully`);
           
-          // Refresh all relevant views
-          ctx.jobTreeProvider.refresh();
+          // Refresh views
           ctx.queueTreeProvider.refresh();
-          ctx.workerTreeProvider.refresh();
-          
-          // Also refresh dashboard if open
+          ctx.jobTreeProvider.refresh();
           vscode.commands.executeCommand('sidekiq.refreshUI');
         } catch (error: any) {
-          vscode.window.showErrorMessage(`Failed to delete job: ${error.message}`);
+          vscode.window.showErrorMessage(`Failed to clear queue: ${error.message}`);
         }
       }
+    })
+  );
+
+  // Pause queue command (placeholder - Sidekiq doesn't natively support this)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sidekiq.pauseQueue', async (item: any) => {
+      ctx.analytics.trackCommand('sidekiq.pauseQueue', true);
+      
+      const queue = item.queue || item;
+      vscode.window.showInformationMessage(`Queue pausing is not yet implemented. Queue: ${queue.name}`);
+      // TODO: Implement queue pausing if using Sidekiq Pro/Enterprise
     })
   );
 }

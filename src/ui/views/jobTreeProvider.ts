@@ -130,12 +130,8 @@ class JobTreeItem extends vscode.TreeItem {
       this.iconPath = new vscode.ThemeIcon('circle-filled');
     }
     
-    // Add command to view job details
-    this.command = {
-      command: 'sidekiq.viewJob',
-      title: 'View Job',
-      arguments: [job, category]
-    };
+    // Remove command to avoid interfering with selection
+    // Users can double-click or use context menu for actions
   }
 
   private getDescription(): string {

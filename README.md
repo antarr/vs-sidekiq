@@ -88,10 +88,16 @@ A comprehensive Visual Studio Code extension for monitoring and managing Sidekiq
 
 - `Ctrl+Shift+S` - Open Sidekiq dashboard
 - `Ctrl+Alt+S` - Switch server
-- `Ctrl+R` - Retry selected job
-- `Ctrl+D` - Delete selected job
 - `F5` - Refresh current view
 - `Ctrl+1-9` - Quick switch to server 1-9
+
+### Job Operations
+- **Select Multiple**: `Ctrl+Click` (add to selection) or `Shift+Click` (range selection)
+- `Delete` - Delete selected job(s)
+- `Ctrl+R` / `Cmd+R` - Retry selected job(s)
+- `Shift+Delete` - Delete all selected jobs
+- `Ctrl+Shift+R` / `Cmd+Shift+R` - Retry all selected jobs
+- **Right-click** - Show context menu with all available actions
 
 ## Requirements
 

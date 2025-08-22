@@ -54,6 +54,41 @@
         "title": "Refresh",
         "category": "Sidekiq",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "sidekiq.retryJob",
+        "title": "Retry Job",
+        "category": "Sidekiq"
+      },
+      {
+        "command": "sidekiq.deleteJob",
+        "title": "Delete Job",
+        "category": "Sidekiq"
+      },
+      {
+        "command": "sidekiq.viewJobDetails",
+        "title": "View Job Details",
+        "category": "Sidekiq"
+      },
+      {
+        "command": "sidekiq.retrySelectedJobs",
+        "title": "Retry Selected Jobs",
+        "category": "Sidekiq"
+      },
+      {
+        "command": "sidekiq.deleteSelectedJobs",
+        "title": "Delete Selected Jobs",
+        "category": "Sidekiq"
+      },
+      {
+        "command": "sidekiq.clearQueue",
+        "title": "Clear Queue",
+        "category": "Sidekiq"
+      },
+      {
+        "command": "sidekiq.pauseQueue",
+        "title": "Pause Queue",
+        "category": "Sidekiq"
       }
     ],
     "viewsContainers": {
@@ -113,8 +148,56 @@
           "description": "Dashboard theme"
         }
       }
+    },
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "sidekiq.retryJob",
+          "when": "view == sidekiqJobs && viewItem =~ /job-(retry|dead)/",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "sidekiq.deleteJob",
+          "when": "view == sidekiqJobs && viewItem =~ /job-/",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "sidekiq.clearQueue",
+          "when": "view == sidekiqQueues && viewItem == queue",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "sidekiq.pauseQueue",
+          "when": "view == sidekiqQueues && viewItem == queue",
+          "group": "1_actions@2"
+        }
+      ]
     }
   },
+  "keybindings": [
+    {
+      "command": "sidekiq.deleteJob",
+      "key": "delete",
+      "when": "focusedView == sidekiqJobs && viewItem =~ /job-/"
+    },
+    {
+      "command": "sidekiq.retryJob",
+      "key": "ctrl+r",
+      "mac": "cmd+r",
+      "when": "focusedView == sidekiqJobs && viewItem =~ /job-(retry|dead)/"
+    },
+    {
+      "command": "sidekiq.deleteSelectedJobs",
+      "key": "shift+delete",
+      "when": "focusedView == sidekiqJobs"
+    },
+    {
+      "command": "sidekiq.retrySelectedJobs",
+      "key": "ctrl+shift+r",
+      "mac": "cmd+shift+r",
+      "when": "focusedView == sidekiqJobs"
+    }
+  ],
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./ && npm run esbuild-base",

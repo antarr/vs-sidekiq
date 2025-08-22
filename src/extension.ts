@@ -46,7 +46,13 @@ export async function activate(context: vscode.ExtensionContext) {
   vscode.window.registerTreeDataProvider('sidekiqServers', serverTreeProvider);
   vscode.window.registerTreeDataProvider('sidekiqQueues', queueTreeProvider);
   vscode.window.registerTreeDataProvider('sidekiqWorkers', workerTreeProvider);
-  vscode.window.registerTreeDataProvider('sidekiqJobs', jobTreeProvider);
+  
+  // Register jobs tree view with multi-select support
+  const jobsTreeView = vscode.window.createTreeView('sidekiqJobs', {
+    treeDataProvider: jobTreeProvider,
+    canSelectMany: true
+  });
+  context.subscriptions.push(jobsTreeView);
 
   // Register commands
   registerCommands(context, {
