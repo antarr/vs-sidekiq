@@ -8,6 +8,7 @@ import { ServerTreeProvider } from './ui/views/serverTreeProvider';
 import { QueueTreeProvider } from './ui/views/queueTreeProvider';
 import { WorkerTreeProvider } from './ui/views/workerTreeProvider';
 import { JobTreeProvider } from './ui/views/jobTreeProvider';
+// import { CronTreeProvider } from './ui/views/cronTreeProvider'; // Disabled - focusing on core Sidekiq
 import { registerCommands } from './commands';
 import { ServerEnvironment } from './data/models/server';
 
@@ -41,11 +42,13 @@ export async function activate(context: vscode.ExtensionContext) {
   const queueTreeProvider = new QueueTreeProvider(connectionManager, serverRegistry, licenseManager);
   const workerTreeProvider = new WorkerTreeProvider(connectionManager, serverRegistry, licenseManager);
   const jobTreeProvider = new JobTreeProvider(connectionManager, serverRegistry, licenseManager);
+  // const cronTreeProvider = new CronTreeProvider(connectionManager, serverRegistry); // Disabled
 
   // Register tree data providers
   vscode.window.registerTreeDataProvider('sidekiqServers', serverTreeProvider);
   vscode.window.registerTreeDataProvider('sidekiqQueues', queueTreeProvider);
   vscode.window.registerTreeDataProvider('sidekiqWorkers', workerTreeProvider);
+  // vscode.window.registerTreeDataProvider('sidekiqCron', cronTreeProvider); // Disabled
   
   // Register jobs tree view with multi-select support
   const jobsTreeView = vscode.window.createTreeView('sidekiqJobs', {
@@ -65,6 +68,7 @@ export async function activate(context: vscode.ExtensionContext) {
     queueTreeProvider,
     workerTreeProvider,
     jobTreeProvider
+    // cronTreeProvider // Disabled
   });
 
   // Initialize status bar
@@ -97,6 +101,7 @@ export async function activate(context: vscode.ExtensionContext) {
       queueTreeProvider.refresh();
       workerTreeProvider.refresh();
       jobTreeProvider.refresh();
+      // cronTreeProvider.refresh(); // Disabled
     }
   }, Math.max(refreshInterval, 5000)); // Minimum 5 seconds
 

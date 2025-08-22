@@ -1,7 +1,7 @@
 import Redis from 'ioredis';
 import { ConnectionManager } from './connectionManager';
 import { ServerConfig } from '../data/models/server';
-import { Queue, Job, Worker, SidekiqStats } from '../data/models/sidekiq';
+import { Queue, Job, Worker, SidekiqStats /* , CronJob */ } from '../data/models/sidekiq';
 
 export class SidekiqClient {
   constructor(private connectionManager: ConnectionManager) {}
@@ -357,4 +357,226 @@ export class SidekiqClient {
       return 0;
     }
   }
+
+  /* Disabled - focusing on core Sidekiq features
+  async getCronJobs(server: ServerConfig): Promise<CronJob[]> {
+    const redis = await this.connectionManager.getConnection(server);
+    
+    console.log('Searching for cron jobs...');
+    
+    // Sidekiq-cron stores job data in a hash called 'cron_job' (singular)
+    // and job names in a set called 'cron_jobs' (plural)
+    let cronJobsHash: Record<string, string> = {};
+    
+    // First get the list of job names from the set
+    const cronJobNames = await redis.smembers('cron_jobs');
+    console.log('Found cron job names:', cronJobNames);
+    
+    // Then get the data for each job from the hash
+    if (cronJobNames.length > 0) {
+      // Get all data from the cron_job hash at once
+      const allCronData = await redis.hgetall('cron_job');
+      console.log('cron_job hash has', Object.keys(allCronData).length, 'entries');
+      
+      // Match the job names with their data
+      for (const jobName of cronJobNames) {
+        if (allCronData[jobName]) {
+          cronJobsHash[jobName] = allCronData[jobName];
+        }
+      }
+    }
+    
+    // Fallback: if no data found, try other patterns
+    if (Object.keys(cronJobsHash).length === 0) {
+      console.log('No jobs found in standard location, trying fallbacks...');
+      
+      // Try cron_jobs hash (plural)
+      cronJobsHash = await redis.hgetall('cron_jobs');
+      console.log('Checking cron_jobs hash:', Object.keys(cronJobsHash).length, 'entries');
+      
+      // Try with namespace
+      if (Object.keys(cronJobsHash).length === 0) {
+        cronJobsHash = await redis.hgetall('sidekiq:cron_jobs');
+        console.log('Checking sidekiq:cron_jobs:', Object.keys(cronJobsHash).length, 'entries');
+      }
+    }
+    
+    const cronJobs: CronJob[] = [];
+    
+    for (const [name, data] of Object.entries(cronJobsHash)) {
+      try {
+        // Check if data is PHP serialized (starts with 'i:' for integer)
+        if (typeof data === 'string' && data.startsWith('i:')) {
+          // This is just a timestamp, not the full job data
+          // The actual job data might be stored differently
+          console.log(`Job ${name} has PHP serialized timestamp: ${data}`);
+          
+          // For PHP serialized data, we'll create a basic job entry
+          // The timestamp appears to be the last run time
+          const timestamp = parseInt(data.substring(2).replace(';', ''));
+          
+          cronJobs.push({
+            name: name,
+            cron: '* * * * *', // Default, since we don't have the actual schedule
+            class: name, // Use name as class since we don't have the data
+            queue: 'default',
+            args: [],
+            active: true,
+            lastEnqueueTime: new Date(timestamp * 1000),
+            nextEnqueueTime: undefined,
+            description: undefined
+          });
+        } else {
+          // Try parsing as JSON
+          const jobData = JSON.parse(data as string);
+          console.log('Parsing cron job:', name, jobData);
+          
+          // Get the last and next enqueue times if available
+          const lastEnqueueTime = jobData.last_enqueue_time ? 
+            new Date(jobData.last_enqueue_time * 1000) : undefined;
+          const nextEnqueueTime = jobData.next_enqueue_time ? 
+            new Date(jobData.next_enqueue_time * 1000) : undefined;
+          
+          cronJobs.push({
+            name: name,
+            cron: jobData.cron || jobData.schedule,
+            class: jobData.klass || jobData.class,
+            queue: jobData.queue || 'default',
+            args: jobData.args,
+            active: jobData.status !== 'disabled',
+            lastEnqueueTime,
+            nextEnqueueTime,
+            description: jobData.description
+          });
+        }
+      } catch (error) {
+        console.error(`Failed to parse cron job ${name}:`, error);
+        // Even if parsing fails, show the job with minimal info
+        cronJobs.push({
+          name: name,
+          cron: 'Unknown',
+          class: name,
+          queue: 'default',
+          args: [],
+          active: true,
+          lastEnqueueTime: undefined,
+          nextEnqueueTime: undefined,
+          description: undefined
+        });
+      }
+    }
+    
+    console.log('Total cron jobs found:', cronJobs.length);
+    return cronJobs.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  */
+
+  /* Disabled - focusing on core Sidekiq features
+  async enableCronJob(server: ServerConfig, jobName: string): Promise<void> {
+    const redis = await this.connectionManager.getConnection(server);
+    
+    // Try different key patterns
+    let jobData = await redis.hget('cron_jobs', jobName);
+    let keyPattern = 'cron_jobs';
+    
+    if (!jobData) {
+      jobData = await redis.hget('sidekiq:cron_jobs', jobName);
+      keyPattern = 'sidekiq:cron_jobs';
+    }
+    
+    if (!jobData) {
+      jobData = await redis.get(`cron_job:${jobName}`);
+      keyPattern = 'cron_job:';
+    }
+    
+    if (jobData) {
+      const job = JSON.parse(jobData);
+      job.status = 'enabled';
+      
+      if (keyPattern === 'cron_job:') {
+        await redis.set(`cron_job:${jobName}`, JSON.stringify(job));
+      } else {
+        await redis.hset(keyPattern, jobName, JSON.stringify(job));
+      }
+    }
+  }
+
+  */
+
+  /* Disabled - focusing on core Sidekiq features
+  async disableCronJob(server: ServerConfig, jobName: string): Promise<void> {
+    const redis = await this.connectionManager.getConnection(server);
+    
+    // Try different key patterns
+    let jobData = await redis.hget('cron_jobs', jobName);
+    let keyPattern = 'cron_jobs';
+    
+    if (!jobData) {
+      jobData = await redis.hget('sidekiq:cron_jobs', jobName);
+      keyPattern = 'sidekiq:cron_jobs';
+    }
+    
+    if (!jobData) {
+      jobData = await redis.get(`cron_job:${jobName}`);
+      keyPattern = 'cron_job:';
+    }
+    
+    if (jobData) {
+      const job = JSON.parse(jobData);
+      job.status = 'disabled';
+      
+      if (keyPattern === 'cron_job:') {
+        await redis.set(`cron_job:${jobName}`, JSON.stringify(job));
+      } else {
+        await redis.hset(keyPattern, jobName, JSON.stringify(job));
+      }
+    }
+  }
+
+  */
+
+  /* Disabled - focusing on core Sidekiq features
+  async deleteCronJob(server: ServerConfig, jobName: string): Promise<void> {
+    const redis = await this.connectionManager.getConnection(server);
+    
+    // Try different key patterns
+    const deleted1 = await redis.hdel('cron_jobs', jobName);
+    const deleted2 = await redis.hdel('sidekiq:cron_jobs', jobName);
+    const deleted3 = await redis.del(`cron_job:${jobName}`);
+    
+    // At least one should have been deleted
+    if (!deleted1 && !deleted2 && !deleted3) {
+      console.warn(`Cron job ${jobName} not found in any known location`);
+    }
+  }
+
+  */
+
+  /* Disabled - focusing on core Sidekiq features
+  async enqueueCronJobNow(server: ServerConfig, cronJob: CronJob): Promise<void> {
+    const redis = await this.connectionManager.getConnection(server);
+    
+    // Create a job and enqueue it immediately
+    const jobData = {
+      jid: this.generateJobId(),
+      class: cronJob.class,
+      args: cronJob.args || [],
+      created_at: Math.floor(Date.now() / 1000),
+      enqueued_at: Math.floor(Date.now() / 1000),
+      queue: cronJob.queue
+    };
+    
+    await redis.lpush(`queue:${cronJob.queue}`, JSON.stringify(jobData));
+  }
+  */
+
+  /* Disabled - only used by cron features
+  private generateJobId(): string {
+    // Generate a unique job ID similar to Sidekiq's format
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 15);
+    return `${timestamp}${random}`;
+  }
+  */
 }

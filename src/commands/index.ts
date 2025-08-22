@@ -8,6 +8,7 @@ import { ServerTreeProvider } from '../ui/views/serverTreeProvider';
 import { QueueTreeProvider } from '../ui/views/queueTreeProvider';
 import { WorkerTreeProvider } from '../ui/views/workerTreeProvider';
 import { JobTreeProvider } from '../ui/views/jobTreeProvider';
+// import { CronTreeProvider } from '../ui/views/cronTreeProvider'; // Disabled
 import { ServerEnvironment } from '../data/models/server';
 
 interface CommandContext {
@@ -20,6 +21,7 @@ interface CommandContext {
   queueTreeProvider: QueueTreeProvider;
   workerTreeProvider: WorkerTreeProvider;
   jobTreeProvider: JobTreeProvider;
+  // cronTreeProvider?: CronTreeProvider; // Disabled
 }
 
 export function registerCommands(context: vscode.ExtensionContext, ctx: CommandContext) {
@@ -686,4 +688,14 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
       // TODO: Implement queue pausing if using Sidekiq Pro/Enterprise
     })
   );
+
+  // Cron job commands disabled - focusing on core Sidekiq features
+  /* Disabled cron job commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sidekiq.enableCronJob', async (item: any) => {}),
+    vscode.commands.registerCommand('sidekiq.disableCronJob', async (item: any) => {}),
+    vscode.commands.registerCommand('sidekiq.enqueueCronJob', async (item: any) => {}),
+    vscode.commands.registerCommand('sidekiq.deleteCronJob', async (item: any) => {})
+  );
+  */
 }

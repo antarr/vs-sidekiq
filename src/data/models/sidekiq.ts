@@ -81,3 +81,16 @@ export interface JobMetrics {
   errorRate: number;
   serverId?: string;
 }
+
+export interface CronJob {
+  name: string;
+  cron: string;
+  class: string;
+  queue: string;
+  args?: any[];
+  active?: boolean;
+  lastEnqueueTime?: Date;
+  nextEnqueueTime?: Date;
+  description?: string;
+  serverId?: string;
+}
