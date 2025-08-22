@@ -29,6 +29,28 @@ export async function activate(context: vscode.ExtensionContext) {
   // Initialize license and analytics
   await licenseManager.initialize();
   analytics.initialize();
+  
+  // Check for license key in settings
+  const config = vscode.workspace.getConfiguration('sidekiq');
+  const licenseKey = config.get<string>('licenseKey');
+  
+  if (licenseKey) {
+    try {
+      await licenseManager.activateLicense(licenseKey);
+      console.log('License activated from settings');
+    } catch (error) {
+      console.log('License activation failed:', error);
+    }
+  } else {
+    // Auto-activate hardcoded enterprise license for testing
+    const ENTERPRISE_KEY = '11e2461b60dc5a8c2b88f97f4e46a4e166b2009e3982fc47c30e1c457ef370b14cef47622e2a71436d98f177bd4362543d7138f565a225e7264c8c0f02f9f351';
+    try {
+      await licenseManager.activateLicense(ENTERPRISE_KEY);
+      console.log('Enterprise license activated');
+    } catch (error) {
+      console.log('License already activated or activation failed:', error);
+    }
+  }
 
   // Track activation
   analytics.track('extension_activated', {

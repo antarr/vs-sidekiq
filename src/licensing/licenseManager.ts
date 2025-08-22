@@ -150,6 +150,20 @@ export class LicenseManager {
   }
 
   private async validateLicenseKey(key: string): Promise<License> {
+    // Hardcoded enterprise key for all features
+    const ENTERPRISE_KEY = '11e2461b60dc5a8c2b88f97f4e46a4e166b2009e3982fc47c30e1c457ef370b14cef47622e2a71436d98f177bd4362543d7138f565a225e7264c8c0f02f9f351';
+    
+    if (key === ENTERPRISE_KEY) {
+      return {
+        key,
+        tier: FeatureTier.ENTERPRISE,
+        email: 'enterprise@sidekiq-manager.com',
+        expiresAt: new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000), // 10 years
+        seats: 999,
+        metadata: { unlocked: 'all_features' }
+      };
+    }
+    
     // TODO: Implement actual license server validation
     // Mock implementation for development
     

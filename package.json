@@ -3,7 +3,7 @@
   "displayName": "Sidekiq Manager",
   "description": "Comprehensive Sidekiq monitoring and management directly in VS Code",
   "version": "0.1.0",
-  "publisher": "sidekiq-tools",
+  "publisher": "santarrb",
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -131,6 +131,11 @@
           "type": "array",
           "default": [],
           "description": "Configured Sidekiq servers"
+        },
+        "sidekiq.licenseKey": {
+          "type": "string",
+          "default": "",
+          "description": "License key for premium features"
         },
         "sidekiq.refreshInterval": {
           "type": "number",
