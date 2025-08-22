@@ -58,10 +58,20 @@ export async function activate(context: vscode.ExtensionContext) {
       await licenseManager.activateLicense(ENTERPRISE_KEY);
       console.log('Enterprise license activated successfully');
       console.log('Current tier after activation:', licenseManager.getCurrentTier());
+      console.log('Max server connections:', licenseManager.getMaxServerConnections());
+      console.log('Can use unlimited servers:', licenseManager.canUseFeature(require('./licensing/features').Feature.UNLIMITED_SERVERS));
     } catch (error) {
       console.error('Enterprise license activation failed:', error);
     }
   }
+  
+  // Debug license status
+  console.log('=== License Status Debug ===');
+  console.log('Current tier:', licenseManager.getCurrentTier());
+  console.log('Is licensed:', licenseManager.isLicensed());
+  console.log('Max server connections:', licenseManager.getMaxServerConnections());
+  console.log('License object:', licenseManager.getCurrentLicense());
+  console.log('===========================');
 
   // Track activation
   analytics.track('extension_activated', {
@@ -82,6 +92,8 @@ export async function activate(context: vscode.ExtensionContext) {
   vscode.window.registerTreeDataProvider('sidekiqQueues', queueTreeProvider);
   vscode.window.registerTreeDataProvider('sidekiqWorkers', workerTreeProvider);
   // vscode.window.registerTreeDataProvider('sidekiqCron', cronTreeProvider); // Disabled
+  
+  console.log('Tree data providers registered successfully');
   
   // Register jobs tree view with multi-select support
   const jobsTreeView = vscode.window.createTreeView('sidekiqJobs', {
@@ -125,6 +137,24 @@ export async function activate(context: vscode.ExtensionContext) {
 
   updateStatusBar();
   serverRegistry.onDidChangeActiveServer(updateStatusBar);
+  
+  // Listen for server registry changes and refresh tree view
+  serverRegistry.on('serversLoaded', () => {
+    console.log('Servers loaded, refreshing server tree view');
+    serverTreeProvider.refresh();
+  });
+  serverRegistry.on('serverAdded', () => {
+    console.log('Server added, refreshing server tree view');
+    serverTreeProvider.refresh();
+  });
+  serverRegistry.on('serverRemoved', () => {
+    console.log('Server removed, refreshing server tree view');
+    serverTreeProvider.refresh();
+  });
+  serverRegistry.on('activeServerChanged', () => {
+    console.log('Active server changed, refreshing server tree view');
+    serverTreeProvider.refresh();
+  });
 
   // Set up auto-refresh
   const refreshInterval = vscode.workspace.getConfiguration('sidekiq').get<number>('refreshInterval', 30) * 1000;
@@ -141,6 +171,9 @@ export async function activate(context: vscode.ExtensionContext) {
   // Auto-connect to saved servers
   await serverRegistry.loadSavedServers();
   
+  // Refresh tree view after loading servers
+  serverTreeProvider.refresh();
+  
   // If no servers configured, add a default localhost server
   if (serverRegistry.getServerCount() === 0) {
     console.log('No servers configured, adding default localhost server');
@@ -151,6 +184,9 @@ export async function activate(context: vscode.ExtensionContext) {
       environment: ServerEnvironment.Development
     });
     
+    // Refresh tree view after adding default server
+    serverTreeProvider.refresh();
+    
     // Try to connect to the default server
     try {
       await connectionManager.connect(defaultServer);
@@ -158,6 +194,17 @@ export async function activate(context: vscode.ExtensionContext) {
     } catch (error) {
       console.log('Could not connect to default localhost server:', error);
       // Not critical if it fails
+    }
+  } else {
+    // If servers exist, try to connect to the active server
+    const activeServer = serverRegistry.getActiveServer();
+    if (activeServer) {
+      try {
+        await connectionManager.connect(activeServer);
+        console.log(`Connected to active server: ${activeServer.name}`);
+      } catch (error) {
+        console.log(`Could not connect to active server ${activeServer.name}:`, error);
+      }
     }
   }
 

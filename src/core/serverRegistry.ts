@@ -24,11 +24,16 @@ export class ServerRegistry extends EventEmitter {
       this.servers.set(server.id, server);
     }
 
-    // Set first server as active if none selected
-    if (this.servers.size > 0 && !this.activeServerId) {
+    // Restore previously active server from persistent storage
+    const savedActiveServerId = await this.context.globalState.get<string>('activeServerId');
+    if (savedActiveServerId && this.servers.has(savedActiveServerId)) {
+      this.activeServerId = savedActiveServerId;
+    } else if (this.servers.size > 0 && !this.activeServerId) {
+      // Set first server as active if none selected or saved server not found
       this.activeServerId = Array.from(this.servers.keys())[0];
     }
 
+    console.log(`Loaded ${this.servers.size} saved servers. Active server ID: ${this.activeServerId}`);
     this.emit('serversLoaded', Array.from(this.servers.values()));
   }
 

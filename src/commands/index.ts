@@ -33,10 +33,14 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
       // Check server limit
       const maxServers = ctx.licenseManager.getMaxServerConnections();
       const currentServers = ctx.serverRegistry.getServerCount();
+      const currentTier = ctx.licenseManager.getCurrentTier();
+      
+      console.log(`License check: Current tier: ${currentTier}, Max servers: ${maxServers}, Current servers: ${currentServers}`);
       
       if (currentServers >= maxServers) {
+        console.log(`Server limit reached. Current: ${currentServers}, Max: ${maxServers}`);
         const upgrade = await vscode.window.showWarningMessage(
-          `You've reached the maximum of ${maxServers} server connections for your plan.`,
+          `You've reached the maximum of ${maxServers} server connections for your ${currentTier} plan.`,
           'Upgrade Plan',
           'Remove Server'
         );
@@ -48,6 +52,8 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
         }
         return;
       }
+      
+      console.log(`Server limit check passed. Adding new server...`);
 
       // Get server details
       const name = await vscode.window.showInputBox({
@@ -97,9 +103,14 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
         
         // Refresh views
         ctx.serverTreeProvider.refresh();
+        ctx.queueTreeProvider.refresh();
+        ctx.workerTreeProvider.refresh();
+        ctx.jobTreeProvider.refresh();
         
+        console.log(`Successfully connected to server: ${name}`);
         vscode.window.showInformationMessage(`Connected to ${name}`);
       } catch (error: any) {
+        console.error(`Failed to connect to server:`, error);
         vscode.window.showErrorMessage(`Failed to connect: ${error.message}`);
         ctx.analytics.trackError(error, 'connect_server');
       }
@@ -689,6 +700,55 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
     })
   );
 
+  // Debug command for testing
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sidekiq.debug', async () => {
+      const servers = ctx.serverRegistry.getAllServers();
+      const activeServer = ctx.serverRegistry.getActiveServer();
+      const currentTier = ctx.licenseManager.getCurrentTier();
+      const maxServers = ctx.licenseManager.getMaxServerConnections();
+      const license = ctx.licenseManager.getCurrentLicense();
+      
+      const debugInfo = [
+        '=== Sidekiq Manager Debug Info ===',
+        `Current License Tier: ${currentTier}`,
+        `Is Licensed: ${ctx.licenseManager.isLicensed()}`,
+        `Max Server Connections: ${maxServers}`,
+        `License Object: ${JSON.stringify(license, null, 2)}`,
+        '',
+        `Total Servers Configured: ${servers.length}`,
+        `Active Server: ${activeServer ? activeServer.name + ' (' + activeServer.id + ')' : 'None'}`,
+        '',
+        'Configured Servers:',
+        ...servers.map(s => `  - ${s.name} (${s.id}) - ${s.host}:${s.port} [${s.environment}]`),
+        '',
+        'Feature Checks:',
+        `  - Can use unlimited servers: ${ctx.licenseManager.canUseFeature(require('../licensing/features').Feature.UNLIMITED_SERVERS)}`,
+        `  - Can use multi-server: ${ctx.licenseManager.canUseFeature(require('../licensing/features').Feature.MULTI_SERVER)}`,
+        '================================'
+      ].join('\n');
+      
+      console.log(debugInfo);
+      
+      const outputChannel = vscode.window.createOutputChannel('Sidekiq Debug');
+      outputChannel.clear();
+      outputChannel.appendLine(debugInfo);
+      outputChannel.show();
+    })
+  );
+
+  // Force refresh command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sidekiq.forceRefresh', () => {
+      console.log('Force refreshing all views...');
+      ctx.serverTreeProvider.refresh();
+      ctx.queueTreeProvider.refresh();
+      ctx.workerTreeProvider.refresh();
+      ctx.jobTreeProvider.refresh();
+      vscode.window.showInformationMessage('Views refreshed');
+    })
+  );
+  
   // Cron job commands disabled - focusing on core Sidekiq features
   /* Disabled cron job commands
   context.subscriptions.push(

@@ -29,22 +29,33 @@ export class ServerTreeProvider implements vscode.TreeDataProvider<TreeItem> {
       const servers = this.serverRegistry.getAllServers();
       const activeServer = this.serverRegistry.getActiveServer();
       const maxServers = this.licenseManager.getMaxServerConnections();
+      const currentTier = this.licenseManager.getCurrentTier();
+      const canUseUnlimitedServers = this.licenseManager.canUseFeature(Feature.UNLIMITED_SERVERS);
       
-      const items: TreeItem[] = servers.map(server => 
-        new ServerTreeItem(
+      console.log(`ServerTreeProvider.getChildren: Found ${servers.length} servers`);
+      console.log(`Active server: ${activeServer?.name || 'none'}`);
+      console.log(`License tier: ${currentTier}, Max servers: ${maxServers}`);
+      console.log(`Can use unlimited servers: ${canUseUnlimitedServers}`);
+      
+      const items: TreeItem[] = servers.map(server => {
+        console.log(`Creating tree item for server: ${server.name} (${server.id})`);
+        return new ServerTreeItem(
           server,
           server.id === activeServer?.id,
           vscode.TreeItemCollapsibleState.None
-        )
-      );
+        );
+      });
 
       // Add "Add Server" item if under limit
       if (servers.length < maxServers) {
+        console.log(`Adding "Add Server" item (${servers.length}/${maxServers})`);
         items.push(new AddServerItem());
-      } else if (!this.licenseManager.canUseFeature(Feature.UNLIMITED_SERVERS)) {
+      } else if (!canUseUnlimitedServers) {
+        console.log(`Adding "Upgrade" item (${servers.length}/${maxServers}, unlimited: ${canUseUnlimitedServers})`);
         items.push(new UpgradeItem());
       }
 
+      console.log(`ServerTreeProvider returning ${items.length} items`);
       return Promise.resolve(items);
     }
     

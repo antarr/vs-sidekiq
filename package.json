@@ -89,6 +89,17 @@
         "command": "sidekiq.pauseQueue",
         "title": "Pause Queue",
         "category": "Sidekiq"
+      },
+      {
+        "command": "sidekiq.debug",
+        "title": "Show Debug Info",
+        "category": "Sidekiq"
+      },
+      {
+        "command": "sidekiq.forceRefresh",
+        "title": "Force Refresh All Views",
+        "category": "Sidekiq",
+        "icon": "$(refresh)"
       }
     ],
     "viewsContainers": {

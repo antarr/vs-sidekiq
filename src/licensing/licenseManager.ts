@@ -81,6 +81,8 @@ export class LicenseManager {
     // Check if current tier meets requirement
     const allowed = this.tierMeetsRequirement(currentTier, requiredTier);
     
+    console.log(`Feature check: ${feature} - Required: ${requiredTier}, Current: ${currentTier}, Allowed: ${allowed}`);
+    
     // Cache result
     this.cache.set(feature, allowed);
     
