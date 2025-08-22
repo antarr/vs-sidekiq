@@ -43,7 +43,7 @@ export class JobTreeProvider implements vscode.TreeDataProvider<TreeItem> {
     if (!element) {
       // Root level - show job categories
       return [
-        new JobCategoryItem('Scheduled', 'schedule', activeServer.name),
+        new JobCategoryItem('Scheduled', 'scheduled', activeServer.name),
         new JobCategoryItem('Retries', 'retry', activeServer.name),
         new JobCategoryItem('Dead', 'dead', activeServer.name)
       ];
@@ -54,7 +54,7 @@ export class JobTreeProvider implements vscode.TreeDataProvider<TreeItem> {
         let jobs: Job[] = [];
         
         switch (element.category) {
-          case 'schedule':
+          case 'scheduled':
             jobs = await this.sidekiqClient.getScheduledJobs(activeServer, 0, maxJobs - 1);
             break;
           case 'retry':
@@ -96,7 +96,7 @@ class JobCategoryItem extends vscode.TreeItem {
     super(label, vscode.TreeItemCollapsibleState.Collapsed);
     
     switch (category) {
-      case 'schedule':
+      case 'scheduled':
         this.iconPath = new vscode.ThemeIcon('clock');
         break;
       case 'retry':
