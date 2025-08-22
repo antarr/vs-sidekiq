@@ -1,0 +1,154 @@
+{
+  "name": "sidekiq-manager",
+  "displayName": "Sidekiq Manager",
+  "description": "Comprehensive Sidekiq monitoring and management directly in VS Code",
+  "version": "0.1.0",
+  "publisher": "sidekiq-tools",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other",
+    "Debuggers",
+    "Visualization"
+  ],
+  "keywords": [
+    "sidekiq",
+    "redis",
+    "ruby",
+    "rails",
+    "jobs",
+    "queue",
+    "background"
+  ],
+  "icon": "resources/icon.png",
+  "galleryBanner": {
+    "color": "#B91C1C",
+    "theme": "dark"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCommand:sidekiq.connect",
+    "onCommand:sidekiq.dashboard",
+    "onView:sidekiqServers"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "sidekiq.connect",
+        "title": "Connect to Server",
+        "category": "Sidekiq"
+      },
+      {
+        "command": "sidekiq.dashboard",
+        "title": "Open Dashboard",
+        "category": "Sidekiq"
+      },
+      {
+        "command": "sidekiq.switchServer",
+        "title": "Switch Server",
+        "category": "Sidekiq"
+      },
+      {
+        "command": "sidekiq.refresh",
+        "title": "Refresh",
+        "category": "Sidekiq",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sidekiq-manager",
+          "title": "Sidekiq Manager",
+          "icon": "resources/sidekiq.svg"
+        }
+      ]
+    },
+    "views": {
+      "sidekiq-manager": [
+        {
+          "id": "sidekiqServers",
+          "name": "Servers",
+          "icon": "$(server)"
+        },
+        {
+          "id": "sidekiqQueues",
+          "name": "Queues",
+          "icon": "$(list-unordered)"
+        },
+        {
+          "id": "sidekiqWorkers",
+          "name": "Workers",
+          "icon": "$(pulse)"
+        },
+        {
+          "id": "sidekiqJobs",
+          "name": "Jobs",
+          "icon": "$(checklist)"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Sidekiq Manager",
+      "properties": {
+        "sidekiq.servers": {
+          "type": "array",
+          "default": [],
+          "description": "Configured Sidekiq servers"
+        },
+        "sidekiq.refreshInterval": {
+          "type": "number",
+          "default": 30,
+          "description": "Auto-refresh interval in seconds (minimum 5)"
+        },
+        "sidekiq.theme": {
+          "type": "string",
+          "enum": [
+            "light",
+            "dark",
+            "auto"
+          ],
+          "default": "auto",
+          "description": "Dashboard theme"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./ && npm run esbuild-base",
+    "watch": "npm run esbuild-base -- --watch",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "lint": "eslint src --ext ts",
+    "test": "node ./dist/test/runTest.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/antarr/vs-sidekiq.git"
+  },
+  "author": "Sidekiq Tools",
+  "license": "MIT",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/antarr/vs-sidekiq/issues"
+  },
+  "homepage": "https://github.com/antarr/vs-sidekiq#readme",
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^8.40.0",
+    "@typescript-eslint/parser": "^8.40.0",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.6.0",
+    "esbuild": "^0.25.9",
+    "eslint": "^9.33.0",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "chart.js": "^4.5.0",
+    "date-fns": "^4.1.0",
+    "ioredis": "^5.7.0",
+    "uuid": "^11.1.0"
+  }
+}
