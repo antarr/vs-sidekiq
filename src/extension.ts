@@ -4,6 +4,7 @@ import { ServerRegistry } from './core/serverRegistry';
 import { LicenseManager } from './licensing/licenseManager';
 import { AnalyticsCollector } from './telemetry/analytics';
 import { DashboardProvider } from './ui/views/dashboardProvider';
+import { QueueDetailsProvider } from './ui/views/queueDetailsProvider';
 import { ServerTreeProvider } from './ui/views/serverTreeProvider';
 import { QueueTreeProvider } from './ui/views/queueTreeProvider';
 import { WorkerTreeProvider } from './ui/views/workerTreeProvider';
@@ -81,6 +82,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Create providers
   const dashboardProvider = new DashboardProvider(context, connectionManager, licenseManager);
+  const queueDetailsProvider = new QueueDetailsProvider(context, connectionManager);
   const serverTreeProvider = new ServerTreeProvider(serverRegistry, licenseManager);
   const queueTreeProvider = new QueueTreeProvider(connectionManager, serverRegistry, licenseManager);
   const workerTreeProvider = new WorkerTreeProvider(connectionManager, serverRegistry, licenseManager);
@@ -109,6 +111,7 @@ export async function activate(context: vscode.ExtensionContext) {
     licenseManager,
     analytics,
     dashboardProvider,
+    queueDetailsProvider,
     serverTreeProvider,
     queueTreeProvider,
     workerTreeProvider,
