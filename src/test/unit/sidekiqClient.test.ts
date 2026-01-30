@@ -59,7 +59,7 @@ describe('SidekiqClient', () => {
             // Check if script contains Lua logic
             assert.ok(lastEvalCall.script.includes('local queue = KEYS[1]'));
             assert.ok(lastEvalCall.script.includes('cjson.decode'));
-            assert.ok(lastEvalCall.script.includes("redis.call('LRANGE', queue, cursor, cursor + batch_size - 1)"));
+            assert.ok(lastEvalCall.script.includes("redis.call('LRANGE', queue, 0, -1)"));
             assert.ok(lastEvalCall.script.includes("redis.call('LREM', queue, 1, job)"));
         });
     });
