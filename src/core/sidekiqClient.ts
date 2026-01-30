@@ -6,9 +6,10 @@ const REMOVE_JOB_BY_JID_SCRIPT = `
 local key = KEYS[1]
 local jid = ARGV[1]
 local cursor = "0"
+local match_pattern = "*" .. jid .. "*"
 
 repeat
-    local result = redis.call("ZSCAN", key, cursor)
+    local result = redis.call("ZSCAN", key, cursor, "MATCH", match_pattern)
     cursor = result[1]
     local items = result[2]
     for i = 1, #items, 2 do
@@ -298,7 +299,7 @@ export class SidekiqClient {
       queue: job.queue
     };
     
-    // First, remove the job from retry or dead set using Lua script for atomicity and performance
+    // First, remove the job from retry or dead set using optimized Lua script (with MATCH) for atomicity and performance
     await redis.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'retry', job.id);
     await redis.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'dead', job.id);
     
