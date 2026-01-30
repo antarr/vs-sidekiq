@@ -3,6 +3,27 @@ import { ConnectionManager } from './connectionManager';
 import { ServerConfig } from '../data/models/server';
 import { Queue, Job, Worker, SidekiqStats /* , CronJob */ } from '../data/models/sidekiq';
 
+const REMOVE_JOB_BY_JID_SCRIPT = `
+local key = KEYS[1]
+local jid = ARGV[1]
+local cursor = "0"
+
+repeat
+    local result = redis.call("ZSCAN", key, cursor)
+    cursor = result[1]
+    local items = result[2]
+    for i = 1, #items, 2 do
+        local raw_job = items[i]
+        local success, job = pcall(cjson.decode, raw_job)
+        if success and job['jid'] == jid then
+            redis.call("ZREM", key, raw_job)
+            return 1
+        end
+    end
+until cursor == "0"
+return 0
+`;
+
 export class SidekiqClient {
   constructor(private connectionManager: ConnectionManager) {}
 
@@ -229,33 +250,9 @@ export class SidekiqClient {
       queue: job.queue
     };
     
-    // First, remove the job from retry or dead set
-    // We need to find the exact JSON string
-    const retryJobs = await redis.zrange('retry', 0, -1);
-    for (const rawJob of retryJobs) {
-      try {
-        const parsedJob = JSON.parse(rawJob);
-        if (parsedJob.jid === job.id) {
-          await redis.zrem('retry', rawJob);
-          break;
-        }
-      } catch (e) {
-        // Skip invalid JSON
-      }
-    }
-    
-    const deadJobs = await redis.zrange('dead', 0, -1);
-    for (const rawJob of deadJobs) {
-      try {
-        const parsedJob = JSON.parse(rawJob);
-        if (parsedJob.jid === job.id) {
-          await redis.zrem('dead', rawJob);
-          break;
-        }
-      } catch (e) {
-        // Skip invalid JSON
-      }
-    }
+    // First, remove the job from retry or dead set using Lua script for atomicity and performance
+    await redis.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'retry', job.id);
+    await redis.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'dead', job.id);
     
     // Now add to the queue
     await redis.lpush(`queue:${job.queue}`, JSON.stringify(jobData));
@@ -283,49 +280,15 @@ export class SidekiqClient {
         break;
         
       case 'retry':
-        // For sorted sets, we need to get all members and find the matching one
-        const retryJobs = await redis.zrange('retry', 0, -1);
-        for (const rawJob of retryJobs) {
-          try {
-            const parsedJob = JSON.parse(rawJob);
-            if (parsedJob.jid === job.id) {
-              await redis.zrem('retry', rawJob);
-              break;
-            }
-          } catch (e) {
-            // Skip invalid JSON
-          }
-        }
+        await redis.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'retry', job.id);
         break;
         
       case 'dead':
-        const deadJobs = await redis.zrange('dead', 0, -1);
-        for (const rawJob of deadJobs) {
-          try {
-            const parsedJob = JSON.parse(rawJob);
-            if (parsedJob.jid === job.id) {
-              await redis.zrem('dead', rawJob);
-              break;
-            }
-          } catch (e) {
-            // Skip invalid JSON
-          }
-        }
+        await redis.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'dead', job.id);
         break;
         
       case 'scheduled':
-        const scheduledJobs = await redis.zrange('schedule', 0, -1);
-        for (const rawJob of scheduledJobs) {
-          try {
-            const parsedJob = JSON.parse(rawJob);
-            if (parsedJob.jid === job.id) {
-              await redis.zrem('schedule', rawJob);
-              break;
-            }
-          } catch (e) {
-            // Skip invalid JSON
-          }
-        }
+        await redis.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'schedule', job.id);
         break;
     }
   }
