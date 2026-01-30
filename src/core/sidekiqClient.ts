@@ -324,10 +324,13 @@ export class SidekiqClient {
             local queue = KEYS[1]
             local jid = ARGV[1]
             local batch_size = 1000
-            local cursor = 0
+            local start = 0
+            local len = redis.call('LLEN', queue)
 
-            while true do
-              local jobs = redis.call('LRANGE', queue, cursor, cursor + batch_size - 1)
+            while start < len do
+              local end_idx = start + batch_size - 1
+              local jobs = redis.call('LRANGE', queue, start, end_idx)
+
               if #jobs == 0 then
                 break
               end
@@ -340,7 +343,7 @@ export class SidekiqClient {
                 end
               end
 
-              cursor = cursor + batch_size
+              start = start + batch_size
             end
             return 0
           `,
