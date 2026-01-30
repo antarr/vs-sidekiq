@@ -1,4 +1,3 @@
-import Redis from 'ioredis';
 import { ConnectionManager } from './connectionManager';
 import { ServerConfig } from '../data/models/server';
 import { Queue, Job, Worker, SidekiqStats /* , CronJob */ } from '../data/models/sidekiq';
@@ -48,17 +47,47 @@ export class SidekiqClient {
     const redis = await this.connectionManager.getConnection(server);
     const queueNames = await redis.smembers('queues');
     
-    const queues: Queue[] = [];
+    if (queueNames.length === 0) {
+      return [];
+    }
+
+    const pipeline = redis.pipeline();
     for (const name of queueNames) {
-      const size = await redis.llen(`queue:${name}`);
-      const latency = await this.getQueueLatency(redis, name);
-      
-      queues.push({
-        name,
-        size,
-        latency,
-        paused: false // TODO: Check if queue is paused
-      });
+      pipeline.llen(`queue:${name}`);
+      pipeline.lindex(`queue:${name}`, -1);
+    }
+
+    const results = await pipeline.exec();
+    const queues: Queue[] = [];
+
+    if (results) {
+      for (let i = 0; i < queueNames.length; i++) {
+        const name = queueNames[i];
+
+        // Results are interleaved: llen, lindex, llen, lindex...
+        const [sizeErr, sizeRes] = results[i * 2];
+        const [jobErr, jobRes] = results[i * 2 + 1];
+
+        const size = sizeErr ? 0 : (sizeRes as number);
+        let latency = 0;
+
+        if (!jobErr && jobRes) {
+          try {
+            const data = JSON.parse(jobRes as string);
+            const enqueuedAt = data.enqueued_at || data.created_at;
+            latency = Math.max(0, Date.now() / 1000 - enqueuedAt);
+          } catch {
+            latency = 0;
+          }
+        }
+
+        queues.push({
+          name,
+          size,
+          latency,
+          paused: false // TODO: Check if queue is paused
+        });
+      }
     }
     
     return queues.sort((a, b) => a.name.localeCompare(b.name));
@@ -343,19 +372,6 @@ export class SidekiqClient {
   async clearDeadSet(server: ServerConfig): Promise<void> {
     const redis = await this.connectionManager.getConnection(server);
     await redis.del('dead');
-  }
-
-  private async getQueueLatency(redis: Redis, queueName: string): Promise<number> {
-    const job = await redis.lindex(`queue:${queueName}`, -1);
-    if (!job) return 0;
-    
-    try {
-      const data = JSON.parse(job);
-      const enqueuedAt = data.enqueued_at || data.created_at;
-      return Math.max(0, Date.now() / 1000 - enqueuedAt);
-    } catch {
-      return 0;
-    }
   }
 
   /* Disabled - focusing on core Sidekiq features
