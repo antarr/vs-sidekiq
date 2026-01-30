@@ -312,19 +312,26 @@ export class SidekiqClient {
     // We need to find and delete the job by matching its ID
     switch (from) {
       case 'queue':
-        // For queues, we need to get all jobs and filter
-        const queueJobs = await redis.lrange(`queue:${job.queue}`, 0, -1);
-        for (const rawJob of queueJobs) {
-          try {
-            const parsedJob = JSON.parse(rawJob);
-            if (parsedJob.jid === job.id) {
-              await redis.lrem(`queue:${job.queue}`, 1, rawJob);
-              break;
-            }
-          } catch (e) {
-            // Skip invalid JSON
-          }
-        }
+        // Use Lua script to find and delete the job server-side
+        // This avoids transferring the entire queue content over the network
+        await redis.eval(
+          `
+            local queue = KEYS[1]
+            local jid = ARGV[1]
+            local jobs = redis.call('LRANGE', queue, 0, -1)
+            for i, job in ipairs(jobs) do
+              local success, parsed = pcall(cjson.decode, job)
+              if success and parsed.jid == jid then
+                redis.call('LREM', queue, 1, job)
+                return 1
+              end
+            end
+            return 0
+          `,
+          1,
+          `queue:${job.queue}`,
+          job.id
+        );
         break;
         
       case 'retry':
