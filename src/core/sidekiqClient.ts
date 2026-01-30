@@ -95,14 +95,25 @@ export class SidekiqClient {
   async getWorkers(server: ServerConfig): Promise<Worker[]> {
     const redis = await this.connectionManager.getConnection(server);
     const workerIds = await redis.smembers('workers');
+
+    if (workerIds.length === 0) {
+      return [];
+    }
     
-    const workers: Worker[] = [];
+    const keys: string[] = [];
     for (const id of workerIds) {
-      const [info, startedAt] = await redis.mget(
-        `worker:${id}`,
-        `worker:${id}:started`
-      );
-      
+      keys.push(`worker:${id}`);
+      keys.push(`worker:${id}:started`);
+    }
+
+    const results = await redis.mget(keys);
+
+    const workers: Worker[] = [];
+    for (let i = 0; i < results.length; i += 2) {
+      const info = results[i];
+      const startedAt = results[i + 1];
+      const id = workerIds[i / 2];
+
       if (info) {
         try {
           const data = JSON.parse(info);
