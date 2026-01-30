@@ -121,8 +121,13 @@ async function runBenchmark() {
   console.log('\n--- Results ---');
   console.log(`Improvement: ${(durationUnopt / durationOpt).toFixed(2)}x faster`);
 
-  if (durationOpt > durationUnopt) {
-      console.error('FAIL: Optimized version is slower!');
+  // Enforce a significant performance improvement (at least 2x faster)
+  // With 50 workers and 5ms latency:
+  // Unoptimized: ~50 * 5ms = 250ms
+  // Optimized: ~5ms (one round trip)
+  // Expected improvement is > 20x. Using 2x as a conservative safety baseline.
+  if (durationOpt > durationUnopt * 0.5) {
+      console.error('FAIL: Optimized version is not significantly faster!');
       process.exit(1);
   }
 }
