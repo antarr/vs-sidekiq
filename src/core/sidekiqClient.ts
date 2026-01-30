@@ -316,18 +316,30 @@ export class SidekiqClient {
     switch (from) {
       case 'queue':
         // Use Lua script to find and delete the job server-side
-        // This avoids transferring the entire queue content over the network
+        // We use chunking to avoid loading the entire queue into memory (O(N) memory)
+        // which would happen if we used LRANGE 0 -1
         await redis.eval(
           `
             local queue = KEYS[1]
             local jid = ARGV[1]
-            local jobs = redis.call('LRANGE', queue, 0, -1)
-            for i, job in ipairs(jobs) do
-              local success, parsed = pcall(cjson.decode, job)
-              if success and parsed.jid == jid then
-                redis.call('LREM', queue, 1, job)
-                return 1
+            local batch_size = 1000
+            local cursor = 0
+
+            while true do
+              local jobs = redis.call('LRANGE', queue, cursor, cursor + batch_size - 1)
+              if #jobs == 0 then
+                break
               end
+
+              for i, job in ipairs(jobs) do
+                local success, parsed = pcall(cjson.decode, job)
+                if success and parsed.jid == jid then
+                  redis.call('LREM', queue, 1, job)
+                  return 1
+                end
+              end
+
+              cursor = cursor + batch_size
             end
             return 0
           `,
