@@ -19,6 +19,7 @@ let serverRegistry: ServerRegistry;
 let licenseManager: LicenseManager;
 let analytics: AnalyticsCollector;
 let refreshTimeout: NodeJS.Timeout | undefined;
+let isExtensionActive = true;
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log('=== Sidekiq Manager is activating... ===');
@@ -162,9 +163,17 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Set up auto-refresh
   const startRefreshLoop = () => {
+    if (!isExtensionActive) {
+      return;
+    }
+
     const refreshInterval = vscode.workspace.getConfiguration('sidekiq').get<number>('refreshInterval', 30) * 1000;
 
     refreshTimeout = setTimeout(() => {
+      if (!isExtensionActive) {
+        return;
+      }
+
       if (serverRegistry.getActiveServer() && connectionManager.isConnected(serverRegistry.getActiveServer()!)) {
         serverTreeProvider.refresh();
         queueTreeProvider.refresh();
@@ -222,6 +231,8 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
+  isExtensionActive = false;
+
   // Clear refresh timeout
   if (refreshTimeout) {
     clearTimeout(refreshTimeout);
