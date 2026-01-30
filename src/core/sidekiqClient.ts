@@ -68,10 +68,18 @@ export class SidekiqClient {
         const [sizeErr, sizeRes] = results[i * 2];
         const [jobErr, jobRes] = results[i * 2 + 1];
 
-        const size = sizeErr ? 0 : (sizeRes as number);
+        if (sizeErr) {
+          throw sizeErr;
+        }
+
+        if (jobErr) {
+          throw jobErr;
+        }
+
+        const size = sizeRes as number;
         let latency = 0;
 
-        if (!jobErr && jobRes) {
+        if (jobRes) {
           try {
             const data = JSON.parse(jobRes as string);
             const enqueuedAt = data.enqueued_at || data.created_at;
