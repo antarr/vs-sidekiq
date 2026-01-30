@@ -72,6 +72,9 @@ export class SidekiqClient {
       return [];
     }
 
+    const pausedQueues = await redis.smembers('paused');
+    const pausedSet = new Set(pausedQueues);
+
     const pipeline = redis.pipeline();
     for (const name of queueNames) {
       pipeline.llen(`queue:${name}`);
@@ -114,7 +117,7 @@ export class SidekiqClient {
           name,
           size,
           latency,
-          paused: false // TODO: Check if queue is paused
+          paused: pausedSet.has(name)
         });
       }
     }
