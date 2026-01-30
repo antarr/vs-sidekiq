@@ -101,8 +101,8 @@ export class AnalyticsCollector {
     });
   }
 
-  async flush(): Promise<void> {
-    if (this.queue.length === 0 || !this.enabled) return;
+  async flush(force: boolean = false): Promise<void> {
+    if (this.queue.length === 0 || (!this.enabled && !force)) return;
 
     const events = [...this.queue];
     this.queue = [];
@@ -134,8 +134,11 @@ export class AnalyticsCollector {
   }
 
   private startFlushTimer(): void {
-    this.flushTimer = setInterval(() => {
-      this.flush();
+    this.flushTimer = setTimeout(async () => {
+      await this.flush();
+      if (this.enabled) {
+        this.startFlushTimer();
+      }
     }, this.flushInterval);
   }
 
@@ -164,8 +167,10 @@ export class AnalyticsCollector {
 
   dispose(): void {
     if (this.flushTimer) {
-      clearInterval(this.flushTimer);
+      clearTimeout(this.flushTimer);
+      this.flushTimer = undefined;
     }
-    this.flush();
+    this.enabled = false;
+    this.flush(true);
   }
 }
