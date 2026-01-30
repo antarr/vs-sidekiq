@@ -71,8 +71,10 @@ export class DashboardProvider {
   }
 
   private async getWebviewContent(server: ServerConfig): Promise<string> {
-    const stats = await this.sidekiqClient.getStats(server);
-    const queues = await this.sidekiqClient.getQueues(server);
+    const [stats, queues] = await Promise.all([
+      this.sidekiqClient.getStats(server),
+      this.sidekiqClient.getQueues(server)
+    ]);
     const tier = this.licenseManager.getCurrentTier();
     const tierName = TIER_NAMES[tier];
     
