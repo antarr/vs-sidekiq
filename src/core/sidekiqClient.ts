@@ -77,6 +77,8 @@ export class SidekiqClient {
     const pausedSet = new Set(pausedQueues);
 
     const pipeline = redis.pipeline();
+    // Use pipeline to batch all size and latency checks into a single network round-trip.
+    // This solves the N+1 query issue where fetching details for N queues would take 2*N round-trips.
     for (const name of queueNames) {
       pipeline.llen(`queue:${name}`);
       pipeline.lindex(`queue:${name}`, -1);
