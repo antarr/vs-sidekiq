@@ -4,6 +4,7 @@ import { ServerRegistry } from '../core/serverRegistry';
 import { LicenseManager } from '../licensing/licenseManager';
 import { AnalyticsCollector } from '../telemetry/analytics';
 import { DashboardProvider } from '../ui/views/dashboardProvider';
+import { QueueDetailsProvider } from '../ui/views/queueDetailsProvider';
 import { ServerTreeProvider } from '../ui/views/serverTreeProvider';
 import { QueueTreeProvider } from '../ui/views/queueTreeProvider';
 import { WorkerTreeProvider } from '../ui/views/workerTreeProvider';
@@ -17,6 +18,7 @@ interface CommandContext {
   licenseManager: LicenseManager;
   analytics: AnalyticsCollector;
   dashboardProvider: DashboardProvider;
+  queueDetailsProvider: QueueDetailsProvider;
   serverTreeProvider: ServerTreeProvider;
   queueTreeProvider: QueueTreeProvider;
   workerTreeProvider: WorkerTreeProvider;
@@ -302,9 +304,8 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
         return;
       }
       
-      // Show queue details in dashboard or panel
-      vscode.window.showInformationMessage(`Queue: ${queue.name} - ${queue.size} jobs`);
-      // TODO: Implement detailed queue view
+      // Show detailed queue view
+      await ctx.queueDetailsProvider.showQueueDetails(activeServer, queue);
     })
   );
 
