@@ -18,8 +18,6 @@ let connectionManager: ConnectionManager;
 let serverRegistry: ServerRegistry;
 let licenseManager: LicenseManager;
 let analytics: AnalyticsCollector;
-let refreshTimeout: NodeJS.Timeout | undefined;
-let isExtensionActive = true;
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log('=== Sidekiq Manager is activating... ===');
@@ -162,30 +160,16 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
   // Set up auto-refresh
-  const startRefreshLoop = () => {
-    if (!isExtensionActive) {
-      return;
+  const refreshInterval = vscode.workspace.getConfiguration('sidekiq').get<number>('refreshInterval', 30) * 1000;
+  setInterval(() => {
+    if (serverRegistry.getActiveServer() && connectionManager.isConnected(serverRegistry.getActiveServer()!)) {
+      serverTreeProvider.refresh();
+      queueTreeProvider.refresh();
+      workerTreeProvider.refresh();
+      jobTreeProvider.refresh();
+      // cronTreeProvider.refresh(); // Disabled
     }
-
-    const refreshInterval = vscode.workspace.getConfiguration('sidekiq').get<number>('refreshInterval', 30) * 1000;
-
-    refreshTimeout = setTimeout(() => {
-      if (!isExtensionActive) {
-        return;
-      }
-
-      if (serverRegistry.getActiveServer() && connectionManager.isConnected(serverRegistry.getActiveServer()!)) {
-        serverTreeProvider.refresh();
-        queueTreeProvider.refresh();
-        workerTreeProvider.refresh();
-        jobTreeProvider.refresh();
-        // cronTreeProvider.refresh(); // Disabled
-      }
-      startRefreshLoop();
-    }, Math.max(refreshInterval, 5000)); // Minimum 5 seconds
-  };
-
-  startRefreshLoop();
+  }, Math.max(refreshInterval, 5000)); // Minimum 5 seconds
 
   // Auto-connect to saved servers
   await serverRegistry.loadSavedServers();
@@ -231,14 +215,6 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-  isExtensionActive = false;
-
-  // Clear refresh timeout
-  if (refreshTimeout) {
-    clearTimeout(refreshTimeout);
-    refreshTimeout = undefined;
-  }
-
   // Clean up connections
   if (connectionManager) {
     connectionManager.dispose();

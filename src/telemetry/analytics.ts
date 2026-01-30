@@ -101,8 +101,8 @@ export class AnalyticsCollector {
     });
   }
 
-  async flush(force: boolean = false): Promise<void> {
-    if (this.queue.length === 0 || (!this.enabled && !force)) return;
+  async flush(): Promise<void> {
+    if (this.queue.length === 0 || !this.enabled) return;
 
     const events = [...this.queue];
     this.queue = [];
@@ -134,11 +134,8 @@ export class AnalyticsCollector {
   }
 
   private startFlushTimer(): void {
-    this.flushTimer = setTimeout(async () => {
-      await this.flush();
-      if (this.enabled) {
-        this.startFlushTimer();
-      }
+    this.flushTimer = setInterval(() => {
+      this.flush();
     }, this.flushInterval);
   }
 
@@ -167,10 +164,8 @@ export class AnalyticsCollector {
 
   dispose(): void {
     if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = undefined;
+      clearInterval(this.flushTimer);
     }
-    this.enabled = false;
-    this.flush(true);
+    this.flush();
   }
 }

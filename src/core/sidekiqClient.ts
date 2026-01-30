@@ -6,10 +6,9 @@ const REMOVE_JOB_BY_JID_SCRIPT = `
 local key = KEYS[1]
 local jid = ARGV[1]
 local cursor = "0"
-local match_pattern = "*" .. jid .. "*"
 
 repeat
-    local result = redis.call("ZSCAN", key, cursor, "MATCH", match_pattern)
+    local result = redis.call("ZSCAN", key, cursor)
     cursor = result[1]
     local items = result[2]
     for i = 1, #items, 2 do
@@ -73,9 +72,6 @@ export class SidekiqClient {
       return [];
     }
 
-    const pausedQueues = await redis.smembers('paused');
-    const pausedSet = new Set(pausedQueues);
-
     const pipeline = redis.pipeline();
     for (const name of queueNames) {
       pipeline.llen(`queue:${name}`);
@@ -118,7 +114,7 @@ export class SidekiqClient {
           name,
           size,
           latency,
-          paused: pausedSet.has(name)
+          paused: false // TODO: Check if queue is paused
         });
       }
     }
@@ -302,7 +298,7 @@ export class SidekiqClient {
       queue: job.queue
     };
     
-    // First, remove the job from retry or dead set using optimized Lua script (with MATCH) for atomicity and performance
+    // First, remove the job from retry or dead set using Lua script for atomicity and performance
     await redis.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'retry', job.id);
     await redis.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'dead', job.id);
     
@@ -317,8 +313,8 @@ export class SidekiqClient {
     switch (from) {
       case 'queue':
         // Use Lua script to find and delete the job server-side
-        // We use chunking to avoid loading the entire queue into memory (O(N) memory)
-        // which would happen if we used LRANGE 0 -1
+        // This avoids transferring the entire queue content over the network
+        // We use chunked iteration to avoid loading the entire queue into memory at once
         await redis.eval(
           `
             local queue = KEYS[1]
