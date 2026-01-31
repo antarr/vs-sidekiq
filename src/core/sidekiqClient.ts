@@ -317,6 +317,7 @@ export class SidekiqClient {
         // Use Lua script to find and delete the job server-side
         // This avoids transferring the entire queue content over the network
         // We use chunked iteration to avoid loading the entire queue into memory at once
+        // This optimization drastically reduces client-side memory usage and network bandwidth
         await redis.eval(
           `
             local queue = KEYS[1]
