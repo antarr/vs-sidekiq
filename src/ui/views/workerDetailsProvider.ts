@@ -55,6 +55,9 @@ export class WorkerDetailsProvider {
             case 'toggleQueues':
               // Handle queue expansion toggle
               break;
+            case 'toggleProcessDetails':
+              // Handle process details expansion toggle
+              break;
           }
         },
         undefined,
@@ -86,6 +89,16 @@ export class WorkerDetailsProvider {
     return `${seconds}s`;
   }
 
+  private getTimeAgo(timestamp: number): string {
+    const now = Date.now() / 1000;
+    const diff = Math.floor(now - timestamp);
+
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  }
+
   private getJobDuration(job: any): string {
     if (!job.enqueuedAt) return '-';
     const now = new Date();
@@ -97,6 +110,12 @@ export class WorkerDetailsProvider {
     return `${seconds}s`;
   }
 
+  private formatMemory(bytes: number): string {
+    const mb = bytes / 1024;
+    if (mb < 1024) return `${mb.toFixed(1)} MB`;
+    return `${(mb / 1024).toFixed(2)} GB`;
+  }
+
   private async getWebviewContent(server: ServerConfig, initialWorker: Worker): Promise<string> {
     // Refresh worker data to get latest stats
     const workers = await this.sidekiqClient.getWorkers(server);
@@ -106,6 +125,16 @@ export class WorkerDetailsProvider {
     const shortHostname = this.getShortHostname(worker.hostname);
     const uptime = this.getUptime(worker.started_at);
     const jobDuration = worker.job ? this.getJobDuration(worker.job) : null;
+
+    // Process details
+    const hasProcessDetails = worker.concurrency !== undefined || worker.beat !== undefined;
+    const concurrency = worker.concurrency || 0;
+    const busy = worker.busy || 0;
+    const idleThreads = concurrency - busy;
+    const utilization = concurrency > 0 ? (busy / concurrency) * 100 : 0;
+    const beatAgo = worker.beat ? this.getTimeAgo(worker.beat) : 'Unknown';
+    const isQuiet = worker.quiet || false;
+    const rss = worker.rss || 0;
 
     return `<!DOCTYPE html>
     <html lang="en">
@@ -252,6 +281,132 @@ export class WorkerDetailsProvider {
         }
         .status-value.busy {
           color: var(--vscode-charts-orange);
+        }
+
+        /* Process Details Section */
+        .process-section {
+          background: var(--vscode-sideBar-background);
+          border: 1px solid var(--vscode-panel-border);
+          border-radius: 6px;
+          padding: 16px;
+          margin-bottom: 24px;
+        }
+        .process-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 12px;
+          cursor: pointer;
+          user-select: none;
+        }
+        .process-header:hover .process-title {
+          color: var(--vscode-foreground);
+        }
+        .process-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--vscode-descriptionForeground);
+          transition: color 0.15s ease;
+        }
+        .process-toggle {
+          color: var(--vscode-descriptionForeground);
+          font-size: 11px;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .process-toggle::after {
+          content: '▼';
+          font-size: 9px;
+          transition: transform 0.2s ease;
+        }
+        .process-toggle.collapsed::after {
+          transform: rotate(-90deg);
+        }
+        .process-content {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 16px;
+          padding: 4px 0;
+        }
+        .process-content.collapsed {
+          display: none;
+        }
+
+        /* Metric Card */
+        .metric-card {
+          background: var(--vscode-editor-background);
+          border: 1px solid var(--vscode-panel-border);
+          border-radius: 4px;
+          padding: 12px;
+        }
+        .metric-label {
+          font-size: 11px;
+          color: var(--vscode-descriptionForeground);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin-bottom: 8px;
+          font-weight: 500;
+        }
+        .metric-value {
+          font-size: 16px;
+          font-weight: 600;
+          color: var(--vscode-foreground);
+          margin-bottom: 8px;
+        }
+        .metric-value.large {
+          font-size: 20px;
+        }
+        .metric-subtext {
+          font-size: 11px;
+          color: var(--vscode-descriptionForeground);
+        }
+
+        /* Progress Bar */
+        .progress-bar-container {
+          margin-top: 8px;
+        }
+        .progress-bar {
+          width: 100%;
+          height: 8px;
+          background: var(--vscode-input-background);
+          border-radius: 4px;
+          overflow: hidden;
+          position: relative;
+        }
+        .progress-bar-fill {
+          height: 100%;
+          transition: width 0.3s ease;
+          border-radius: 4px;
+        }
+        .progress-bar-fill.green {
+          background: var(--vscode-charts-green);
+        }
+        .progress-bar-fill.yellow {
+          background: var(--vscode-charts-yellow);
+        }
+        .progress-bar-fill.orange {
+          background: var(--vscode-charts-orange);
+        }
+        .progress-bar-fill.red {
+          background: var(--vscode-charts-red);
+        }
+
+        /* Badges */
+        .badge {
+          display: inline-block;
+          padding: 4px 8px;
+          border-radius: 10px;
+          font-size: 11px;
+          font-weight: 600;
+        }
+        .badge.warning {
+          background: var(--vscode-charts-orange);
+          color: var(--vscode-editor-background);
+        }
+        .badge.success {
+          background: var(--vscode-charts-green);
+          color: var(--vscode-editor-background);
         }
 
         /* Queues Section */
@@ -522,6 +677,71 @@ export class WorkerDetailsProvider {
           </div>
         </div>
 
+        ${hasProcessDetails ? `
+        <div class="process-section">
+          <div class="process-header" onclick="toggleProcessDetails()">
+            <div class="process-title">Process Details</div>
+            <div class="process-toggle" id="process-toggle">Expand</div>
+          </div>
+          <div class="process-content collapsed" id="process-content">
+            <div class="metric-card">
+              <div class="metric-label">Concurrency</div>
+              <div class="metric-value large">${concurrency}</div>
+              <div class="metric-subtext">Total threads available</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-label">Busy Threads</div>
+              <div class="metric-value large">${busy} / ${concurrency}</div>
+              <div class="metric-subtext">${idleThreads} idle threads</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-label">Thread Utilization</div>
+              <div class="metric-value">${utilization.toFixed(1)}%</div>
+              <div class="progress-bar-container">
+                <div class="progress-bar">
+                  <div class="progress-bar-fill ${utilization < 50 ? 'green' : utilization < 75 ? 'yellow' : utilization < 90 ? 'orange' : 'red'}" style="width: ${utilization}%"></div>
+                </div>
+              </div>
+              <div class="metric-subtext">${busy} of ${concurrency} threads in use</div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-label">Last Heartbeat</div>
+              <div class="metric-value">${beatAgo}</div>
+              <div class="metric-subtext">Process health check</div>
+            </div>
+
+            ${isQuiet ? `
+            <div class="metric-card">
+              <div class="metric-label">Quiet Mode</div>
+              <div class="metric-value">
+                <span class="badge warning">SHUTTING DOWN</span>
+              </div>
+              <div class="metric-subtext">Worker is gracefully stopping</div>
+            </div>
+            ` : `
+            <div class="metric-card">
+              <div class="metric-label">Quiet Mode</div>
+              <div class="metric-value">
+                <span class="badge success">ACTIVE</span>
+              </div>
+              <div class="metric-subtext">Worker is accepting jobs</div>
+            </div>
+            `}
+
+            ${rss > 0 ? `
+            <div class="metric-card">
+              <div class="metric-label">Memory Usage (RSS)</div>
+              <div class="metric-value">${this.formatMemory(rss)}</div>
+              <div class="metric-subtext">Resident set size</div>
+            </div>
+            ` : ''}
+          </div>
+        </div>
+        ` : ''}
+
         <div class="queues-section">
           <div class="queues-header" onclick="toggleQueues()">
             <div>
@@ -622,6 +842,21 @@ export class WorkerDetailsProvider {
             list.classList.add('collapsed');
             toggle.classList.add('collapsed');
             toggle.textContent = 'Click to expand';
+          }
+        }
+
+        function toggleProcessDetails() {
+          const content = document.getElementById('process-content');
+          const toggle = document.getElementById('process-toggle');
+
+          if (content.classList.contains('collapsed')) {
+            content.classList.remove('collapsed');
+            toggle.classList.remove('collapsed');
+            toggle.textContent = 'Collapse';
+          } else {
+            content.classList.add('collapsed');
+            toggle.classList.add('collapsed');
+            toggle.textContent = 'Expand';
           }
         }
       </script>

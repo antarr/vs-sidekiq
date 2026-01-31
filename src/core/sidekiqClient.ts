@@ -1,6 +1,6 @@
 import { ConnectionManager } from './connectionManager';
 import { ServerConfig } from '../data/models/server';
-import { Queue, Job, Worker, SidekiqStats /* , CronJob */ } from '../data/models/sidekiq';
+import { Queue, Job, Worker, SidekiqStats, CronJob } from '../data/models/sidekiq';
 
 const REMOVE_JOB_BY_JID_SCRIPT = `
 local key = KEYS[1]
@@ -411,7 +411,6 @@ export class SidekiqClient {
     await redis.del('dead');
   }
 
-  /* Disabled - focusing on core Sidekiq features
   async getCronJobs(server: ServerConfig): Promise<CronJob[]> {
     const redis = await this.connectionManager.getConnection(server);
     
@@ -523,9 +522,7 @@ export class SidekiqClient {
     return cronJobs.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  */
 
-  /* Disabled - focusing on core Sidekiq features
   async enableCronJob(server: ServerConfig, jobName: string): Promise<void> {
     const redis = await this.connectionManager.getConnection(server);
     
@@ -555,9 +552,7 @@ export class SidekiqClient {
     }
   }
 
-  */
 
-  /* Disabled - focusing on core Sidekiq features
   async disableCronJob(server: ServerConfig, jobName: string): Promise<void> {
     const redis = await this.connectionManager.getConnection(server);
     
@@ -587,12 +582,9 @@ export class SidekiqClient {
     }
   }
 
-  */
 
-  /* Disabled - focusing on core Sidekiq features
   async deleteCronJob(server: ServerConfig, jobName: string): Promise<void> {
     const redis = await this.connectionManager.getConnection(server);
-    
     // Try different key patterns
     const deleted1 = await redis.hdel('cron_jobs', jobName);
     const deleted2 = await redis.hdel('sidekiq:cron_jobs', jobName);
@@ -604,9 +596,6 @@ export class SidekiqClient {
     }
   }
 
-  */
-
-  /* Disabled - focusing on core Sidekiq features
   async enqueueCronJobNow(server: ServerConfig, cronJob: CronJob): Promise<void> {
     const redis = await this.connectionManager.getConnection(server);
     
@@ -622,14 +611,11 @@ export class SidekiqClient {
     
     await redis.lpush(`queue:${cronJob.queue}`, JSON.stringify(jobData));
   }
-  */
 
-  /* Disabled - only used by cron features
   private generateJobId(): string {
     // Generate a unique job ID similar to Sidekiq's format
     const timestamp = Date.now().toString(36);
     const random = Math.random().toString(36).substring(2, 15);
     return `${timestamp}${random}`;
   }
-  */
 }

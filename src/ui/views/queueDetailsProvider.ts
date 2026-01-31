@@ -2,7 +2,15 @@ import * as vscode from 'vscode';
 import { ConnectionManager } from '../../core/connectionManager';
 import { ServerConfig } from '../../data/models/server';
 import { SidekiqClient } from '../../core/sidekiqClient';
-import { Queue } from '../../data/models/sidekiq';
+import { Queue, Job } from '../../data/models/sidekiq';
+
+interface QueueMetrics {
+  oldestJobAge: number | null;
+  oldestJobTimestamp: Date | null;
+  averageJobSize: number;
+  stuckJobsCount: number;
+  stuckJobsWarning: boolean;
+}
 
 export class QueueDetailsProvider {
   private panel: vscode.WebviewPanel | undefined;
@@ -74,6 +82,61 @@ export class QueueDetailsProvider {
     );
   }
 
+  private async calculateQueueMetrics(jobs: Job[]): Promise<QueueMetrics> {
+    let oldestJobAge: number | null = null;
+    let oldestJobTimestamp: Date | null = null;
+    let totalSize = 0;
+    let stuckJobsCount = 0;
+    const ONE_HOUR_MS = 60 * 60 * 1000;
+    const now = new Date();
+
+    for (const job of jobs) {
+      // Calculate oldest job
+      const jobTimestamp = job.enqueuedAt || job.createdAt;
+      if (jobTimestamp) {
+        if (!oldestJobTimestamp || jobTimestamp < oldestJobTimestamp) {
+          oldestJobTimestamp = jobTimestamp;
+          oldestJobAge = (now.getTime() - jobTimestamp.getTime()) / 1000; // in seconds
+        }
+
+        // Check for stuck jobs (older than 1 hour)
+        const ageMs = now.getTime() - jobTimestamp.getTime();
+        if (ageMs > ONE_HOUR_MS) {
+          stuckJobsCount++;
+        }
+      }
+
+      // Calculate average job size (approximate size of args payload)
+      if (job.args) {
+        totalSize += JSON.stringify(job.args).length;
+      }
+    }
+
+    const averageJobSize = jobs.length > 0 ? Math.round(totalSize / jobs.length) : 0;
+    const stuckJobsWarning = stuckJobsCount > 0;
+
+    return {
+      oldestJobAge,
+      oldestJobTimestamp,
+      averageJobSize,
+      stuckJobsCount,
+      stuckJobsWarning
+    };
+  }
+
+  private formatAge(seconds: number): string {
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+    if (seconds < 86400) return `${Math.round(seconds / 3600)}h`;
+    return `${Math.round(seconds / 86400)}d`;
+  }
+
+  private formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
   private async getWebviewContent(server: ServerConfig, queue: Queue): Promise<string> {
     // Refresh queue data to get latest stats
     const queues = await this.sidekiqClient.getQueues(server);
@@ -81,6 +144,9 @@ export class QueueDetailsProvider {
 
     // Get jobs
     const jobs = await this.sidekiqClient.getQueueJobs(server, queue.name, 0, 99);
+
+    // Calculate metrics
+    const metrics = await this.calculateQueueMetrics(jobs);
 
     const nonce = this.getNonce();
 
@@ -236,6 +302,10 @@ export class QueueDetailsProvider {
           background: #ea580c;
         }
 
+        .stat-card.danger::before {
+          background: #dc2626;
+        }
+
         .stat-label {
           font-size: 11px;
           color: var(--vscode-descriptionForeground);
@@ -256,6 +326,11 @@ export class QueueDetailsProvider {
           font-size: 12px;
           color: var(--vscode-descriptionForeground);
           margin-top: 4px;
+        }
+
+        .stat-warning {
+          color: var(--vscode-errorForeground);
+          font-weight: 600;
         }
 
         /* Section Header */
@@ -593,6 +668,27 @@ export class QueueDetailsProvider {
             <div class="stat-value">${updatedQueue.latency ? updatedQueue.latency.toFixed(2) : '0.00'}s</div>
             <div class="stat-subtext">${updatedQueue.latency > 10 ? 'High latency detected' : 'Processing normally'}</div>
           </div>
+          <div class="stat-card ${metrics.oldestJobAge && metrics.oldestJobAge > 3600 ? 'warning' : ''}">
+            <div class="stat-label">Queue Age</div>
+            <div class="stat-value" style="font-size: 20px;">
+              ${metrics.oldestJobTimestamp ? metrics.oldestJobTimestamp.toLocaleString() : 'N/A'}
+            </div>
+            <div class="stat-subtext">
+              ${metrics.oldestJobAge ? `Oldest job: ${this.formatAge(metrics.oldestJobAge)} ago` : 'No jobs in queue'}
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Avg Job Size</div>
+            <div class="stat-value">${this.formatBytes(metrics.averageJobSize)}</div>
+            <div class="stat-subtext">Average arguments payload</div>
+          </div>
+          ${metrics.stuckJobsWarning ? `
+          <div class="stat-card danger">
+            <div class="stat-label">Stuck Jobs Warning</div>
+            <div class="stat-value">${metrics.stuckJobsCount}</div>
+            <div class="stat-subtext stat-warning">Jobs older than 1 hour</div>
+          </div>
+          ` : ''}
           <div class="stat-card">
             <div class="stat-label">Server</div>
             <div class="stat-value" style="font-size: 16px; margin-top: 8px;">${this.escapeHtml(server.name)}</div>

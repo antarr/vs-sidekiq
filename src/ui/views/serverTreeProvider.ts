@@ -82,11 +82,11 @@ class ServerTreeItem extends vscode.TreeItem {
     }
     
     this.contextValue = 'server';
-    
-    // Add commands
+
+    // Add command - clicking server opens dashboard
     this.command = {
-      command: 'sidekiq.selectServer',
-      title: 'Select Server',
+      command: 'sidekiq.viewServerDashboard',
+      title: 'View Dashboard',
       arguments: [server]
     };
   }

@@ -45,6 +45,12 @@
         "category": "Sidekiq"
       },
       {
+        "command": "sidekiq.viewMetrics",
+        "title": "View Custom Metrics",
+        "category": "Sidekiq",
+        "icon": "$(graph)"
+      },
+      {
         "command": "sidekiq.switchServer",
         "title": "Switch Server",
         "category": "Sidekiq"
@@ -100,6 +106,32 @@
         "title": "Force Refresh All Views",
         "category": "Sidekiq",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "sidekiq.viewServerDashboard",
+        "title": "View Dashboard",
+        "category": "Sidekiq",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "sidekiq.viewCronJob",
+        "title": "View Cron Job Details",
+        "category": "Sidekiq"
+      },
+      {
+        "command": "sidekiq.enableCronJob",
+        "title": "Enable Cron Job",
+        "category": "Sidekiq"
+      },
+      {
+        "command": "sidekiq.disableCronJob",
+        "title": "Disable Cron Job",
+        "category": "Sidekiq"
+      },
+      {
+        "command": "sidekiq.enqueueCronJob",
+        "title": "Enqueue Cron Job Now",
+        "category": "Sidekiq"
       }
     ],
     "viewsContainers": {
@@ -132,6 +164,11 @@
           "id": "sidekiqJobs",
           "name": "Jobs",
           "icon": "$(checklist)"
+        },
+        {
+          "id": "sidekiqCron",
+          "name": "Cron Jobs",
+          "icon": "$(calendar)"
         }
       ]
     },
@@ -186,9 +223,34 @@
           "command": "sidekiq.refresh",
           "when": "view == sidekiqJobs",
           "group": "navigation"
+        },
+        {
+          "command": "sidekiq.refresh",
+          "when": "view == sidekiqCron",
+          "group": "navigation"
+        },
+        {
+          "command": "sidekiq.viewMetrics",
+          "when": "view == sidekiqServers",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
+        {
+          "command": "sidekiq.viewServerDashboard",
+          "when": "view == sidekiqServers && viewItem == server",
+          "group": "inline"
+        },
+        {
+          "command": "sidekiq.viewMetrics",
+          "when": "view == sidekiqServers && viewItem == server",
+          "group": "1_server@2"
+        },
+        {
+          "command": "sidekiq.selectServer",
+          "when": "view == sidekiqServers && viewItem == server",
+          "group": "1_server@1"
+        },
         {
           "command": "sidekiq.retryJob",
           "when": "view == sidekiqJobs && viewItem =~ /job-(retry|dead)/",
@@ -208,6 +270,21 @@
           "command": "sidekiq.pauseQueue",
           "when": "view == sidekiqQueues && viewItem == queue",
           "group": "1_actions@2"
+        },
+        {
+          "command": "sidekiq.enqueueCronJob",
+          "when": "view == sidekiqCron && viewItem =~ /cronJob-/",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "sidekiq.enableCronJob",
+          "when": "view == sidekiqCron && viewItem == cronJob-inactive",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "sidekiq.disableCronJob",
+          "when": "view == sidekiqCron && viewItem == cronJob-active",
+          "group": "1_actions@3"
         }
       ]
     }

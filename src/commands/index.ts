@@ -6,11 +6,12 @@ import { AnalyticsCollector } from '../telemetry/analytics';
 import { DashboardProvider } from '../ui/views/dashboardProvider';
 import { QueueDetailsProvider } from '../ui/views/queueDetailsProvider';
 import { WorkerDetailsProvider } from '../ui/views/workerDetailsProvider';
+import { JobDetailsProvider } from '../ui/views/jobDetailsProvider';
+import { MetricsProvider } from '../ui/views/metricsProvider';
 import { ServerTreeProvider } from '../ui/views/serverTreeProvider';
 import { QueueTreeProvider } from '../ui/views/queueTreeProvider';
 import { WorkerTreeProvider } from '../ui/views/workerTreeProvider';
 import { JobTreeProvider } from '../ui/views/jobTreeProvider';
-// import { CronTreeProvider } from '../ui/views/cronTreeProvider'; // Disabled
 import { ServerEnvironment } from '../data/models/server';
 
 interface CommandContext {
@@ -21,11 +22,12 @@ interface CommandContext {
   dashboardProvider: DashboardProvider;
   queueDetailsProvider: QueueDetailsProvider;
   workerDetailsProvider: WorkerDetailsProvider;
+  jobDetailsProvider: JobDetailsProvider;
+  metricsProvider: MetricsProvider;
   serverTreeProvider: ServerTreeProvider;
   queueTreeProvider: QueueTreeProvider;
   workerTreeProvider: WorkerTreeProvider;
   jobTreeProvider: JobTreeProvider;
-  // cronTreeProvider?: CronTreeProvider; // Disabled
 }
 
 export function registerCommands(context: vscode.ExtensionContext, ctx: CommandContext) {
@@ -33,14 +35,14 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.connect', async () => {
       ctx.analytics.trackCommand('sidekiq.connect', true);
-      
+
       // Check server limit
       const maxServers = ctx.licenseManager.getMaxServerConnections();
       const currentServers = ctx.serverRegistry.getServerCount();
       const currentTier = ctx.licenseManager.getCurrentTier();
-      
+
       console.log(`License check: Current tier: ${currentTier}, Max servers: ${maxServers}, Current servers: ${currentServers}`);
-      
+
       if (currentServers >= maxServers) {
         console.log(`Server limit reached. Current: ${currentServers}, Max: ${maxServers}`);
         const upgrade = await vscode.window.showWarningMessage(
@@ -48,7 +50,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
           'Upgrade Plan',
           'Remove Server'
         );
-        
+
         if (upgrade === 'Upgrade Plan') {
           vscode.commands.executeCommand('sidekiq.upgrade');
         } else if (upgrade === 'Remove Server') {
@@ -56,7 +58,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
         }
         return;
       }
-      
+
       console.log(`Server limit check passed. Adding new server...`);
 
       // Get server details
@@ -104,13 +106,13 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
 
         // Connect to server
         await ctx.connectionManager.connect(server);
-        
+
         // Refresh views
         ctx.serverTreeProvider.refresh();
         ctx.queueTreeProvider.refresh();
         ctx.workerTreeProvider.refresh();
         ctx.jobTreeProvider.refresh();
-        
+
         console.log(`Successfully connected to server: ${name}`);
         vscode.window.showInformationMessage(`Connected to ${name}`);
       } catch (error: any) {
@@ -126,7 +128,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
     vscode.commands.registerCommand('sidekiq.dashboard', async () => {
       ctx.analytics.trackCommand('sidekiq.dashboard', true);
       ctx.analytics.trackViewOpened('dashboard');
-      
+
       const activeServer = ctx.serverRegistry.getActiveServer();
       if (!activeServer) {
         vscode.window.showWarningMessage('No server connected. Please connect to a server first.');
@@ -141,7 +143,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.switchServer', async () => {
       ctx.analytics.trackCommand('sidekiq.switchServer', true);
-      
+
       const servers = ctx.serverRegistry.getAllServers();
       if (servers.length === 0) {
         vscode.window.showInformationMessage('No servers configured. Add a server first.');
@@ -161,13 +163,13 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
 
       if (selected) {
         ctx.serverRegistry.setActiveServer(selected.server.id);
-        
+
         // Refresh all views
         ctx.serverTreeProvider.refresh();
         ctx.queueTreeProvider.refresh();
         ctx.workerTreeProvider.refresh();
         ctx.jobTreeProvider.refresh();
-        
+
         vscode.window.showInformationMessage(`Switched to ${selected.server.name}`);
       }
     })
@@ -177,7 +179,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.refresh', () => {
       ctx.analytics.trackCommand('sidekiq.refresh', true);
-      
+
       ctx.serverTreeProvider.refresh();
       ctx.queueTreeProvider.refresh();
       ctx.workerTreeProvider.refresh();
@@ -189,7 +191,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.removeServer', async () => {
       ctx.analytics.trackCommand('sidekiq.removeServer', true);
-      
+
       const servers = ctx.serverRegistry.getAllServers();
       if (servers.length === 0) {
         vscode.window.showInformationMessage('No servers to remove.');
@@ -212,7 +214,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
           'Yes',
           'No'
         );
-        
+
         if (confirm === 'Yes') {
           await ctx.connectionManager.disconnect(selected.server);
           await ctx.serverRegistry.removeServer(selected.server.id);
@@ -228,7 +230,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
     vscode.commands.registerCommand('sidekiq.upgrade', async () => {
       ctx.analytics.trackCommand('sidekiq.upgrade', true);
       ctx.analytics.trackUpgradeTrigger('manual', ctx.licenseManager.getCurrentTier(), 'pro' as any);
-      
+
       const url = 'https://sidekiq-manager.com/pricing';
       vscode.env.openExternal(vscode.Uri.parse(url));
     })
@@ -238,7 +240,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.activateLicense', async () => {
       ctx.analytics.trackCommand('sidekiq.activateLicense', true);
-      
+
       const key = await vscode.window.showInputBox({
         prompt: 'Enter your license key',
         placeHolder: 'XXXX-XXXX-XXXX-XXXX',
@@ -249,7 +251,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
         try {
           await ctx.licenseManager.activateLicense(key);
           vscode.window.showInformationMessage('License activated successfully!');
-          
+
           // Refresh all views to show new features
           vscode.commands.executeCommand('sidekiq.refresh');
         } catch (error: any) {
@@ -274,7 +276,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
     vscode.commands.registerCommand('sidekiq.selectServer', async (server: any) => {
       if (server && server.id) {
         ctx.serverRegistry.setActiveServer(server.id);
-        
+
         // Connect if not connected
         if (!ctx.connectionManager.isConnected(server)) {
           try {
@@ -283,15 +285,47 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
             vscode.window.showErrorMessage(`Failed to connect to ${server.name}: ${error.message}`);
           }
         }
-        
+
         // Refresh all views
         ctx.serverTreeProvider.refresh();
         ctx.queueTreeProvider.refresh();
         ctx.workerTreeProvider.refresh();
         ctx.jobTreeProvider.refresh();
-        
+
         vscode.window.showInformationMessage(`Selected server: ${server.name}`);
       }
+    })
+  );
+
+  // View server dashboard command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sidekiq.viewServerDashboard', async (server: any) => {
+      ctx.analytics.trackCommand('sidekiq.viewServerDashboard', true);
+
+      if (!server || !server.id) {
+        const activeServer = ctx.serverRegistry.getActiveServer();
+        if (!activeServer) {
+          vscode.window.showWarningMessage('No server selected. Please select a server first.');
+          return;
+        }
+        server = activeServer;
+      }
+
+      // Set as active server
+      ctx.serverRegistry.setActiveServer(server.id);
+
+      // Connect if not connected
+      if (!ctx.connectionManager.isConnected(server)) {
+        try {
+          await ctx.connectionManager.connect(server);
+        } catch (error: any) {
+          vscode.window.showErrorMessage(`Failed to connect to ${server.name}: ${error.message}`);
+          return;
+        }
+      }
+
+      // Show dashboard
+      await ctx.dashboardProvider.showDashboard(server);
     })
   );
 
@@ -299,13 +333,13 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.viewQueue', async (queue: any) => {
       ctx.analytics.trackCommand('sidekiq.viewQueue', true);
-      
+
       const activeServer = ctx.serverRegistry.getActiveServer();
       if (!activeServer) {
         vscode.window.showWarningMessage('No server connected');
         return;
       }
-      
+
       // Show detailed queue view
       await ctx.queueDetailsProvider.showQueueDetails(activeServer, queue);
     })
@@ -315,85 +349,51 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.viewWorker', async (worker: any) => {
       ctx.analytics.trackCommand('sidekiq.viewWorker', true);
-      
+
       const activeServer = ctx.serverRegistry.getActiveServer();
       if (!activeServer) {
         vscode.window.showWarningMessage('No server connected');
         return;
       }
-      
+
       // Show detailed worker view
       await ctx.workerDetailsProvider.showWorkerDetails(activeServer, worker);
     })
   );
 
-  // View job command - now just shows details without actions
+  // View job command - now shows full details view
   context.subscriptions.push(
-    vscode.commands.registerCommand('sidekiq.viewJob', async (job: any, _category: string) => {
+    vscode.commands.registerCommand('sidekiq.viewJob', async (job: any, category: string) => {
       ctx.analytics.trackCommand('sidekiq.viewJob', true);
-      
+
       const activeServer = ctx.serverRegistry.getActiveServer();
       if (!activeServer) {
         vscode.window.showWarningMessage('No server connected');
         return;
       }
-      
-      // Just show job details
-      const message = `Job: ${job.class}\nQueue: ${job.queue}\nID: ${job.id}`;
-      if (job.errorMessage) {
-        vscode.window.showErrorMessage(`${message}\n\nError: ${job.errorMessage}`);
-      } else {
-        vscode.window.showInformationMessage(message);
-      }
+
+      // Show detailed job view with backtrace support
+      await ctx.jobDetailsProvider.showJobDetails(activeServer, job, category);
     })
   );
 
-  // View job details command - for double-click
+  // View job details command - for double-click, now opens the new detailed view
   context.subscriptions.push(
-    vscode.commands.registerCommand('sidekiq.viewJobDetails', async (job: any, category: string) => {
+    vscode.commands.registerCommand('sidekiq.viewJobDetails', async (treeItem: any) => {
       ctx.analytics.trackCommand('sidekiq.viewJobDetails', true);
-      
+
       const activeServer = ctx.serverRegistry.getActiveServer();
       if (!activeServer) {
         vscode.window.showWarningMessage('No server connected');
         return;
       }
-      
-      // Create a detailed view of the job
-      const lines = [
-        `**Job Class:** ${job.class}`,
-        `**Job ID:** ${job.id}`,
-        `**Queue:** ${job.queue}`,
-        `**Category:** ${category}`,
-        `**Created:** ${job.createdAt?.toLocaleString() || 'N/A'}`
-      ];
-      
-      if (job.scheduledAt) {
-        lines.push(`**Scheduled At:** ${job.scheduledAt.toLocaleString()}`);
-      }
-      if (job.retriedAt) {
-        lines.push(`**Retry At:** ${job.retriedAt.toLocaleString()}`);
-      }
-      if (job.failedAt) {
-        lines.push(`**Failed At:** ${job.failedAt.toLocaleString()}`);
-      }
-      if (job.retryCount !== undefined) {
-        lines.push(`**Retry Count:** ${job.retryCount}`);
-      }
-      if (job.errorMessage) {
-        lines.push(`**Error:** ${job.errorMessage}`);
-      }
-      if (job.errorClass) {
-        lines.push(`**Error Class:** ${job.errorClass}`);
-      }
-      
-      lines.push('', `**Arguments:**`, '```json', JSON.stringify(job.args, null, 2), '```');
-      
-      // Show in output channel for better formatting
-      const outputChannel = vscode.window.createOutputChannel('Sidekiq Job Details');
-      outputChannel.clear();
-      outputChannel.appendLine(lines.join('\n'));
-      outputChannel.show();
+
+      // Extract job and category from tree item
+      const job = treeItem.job || treeItem;
+      const category = treeItem.category || 'unknown';
+
+      // Show detailed job view
+      await ctx.jobDetailsProvider.showJobDetails(activeServer, job, category);
     })
   );
 
@@ -401,13 +401,13 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.retryJob', async (...args: any[]) => {
       ctx.analytics.trackCommand('sidekiq.retryJob', true);
-      
+
       const activeServer = ctx.serverRegistry.getActiveServer();
       if (!activeServer) {
         vscode.window.showWarningMessage('No server connected');
         return;
       }
-      
+
       // Handle both old single-item and new multi-select formats
       let items: any[] = [];
       if (args.length === 2 && Array.isArray(args[1])) {
@@ -417,13 +417,13 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
         // Old format: single item
         items = [args[0]];
       }
-      
+
       if (items.length === 0) {
         return;
       }
-      
+
       const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
-      
+
       if (items.length === 1) {
         // Single item
         const job = items[0].job || items[0];
@@ -440,11 +440,11 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
           'Yes',
           'No'
         );
-        
+
         if (confirm === 'Yes') {
           let successCount = 0;
           let failCount = 0;
-          
+
           for (const treeItem of items) {
             const job = treeItem.job || treeItem;
             try {
@@ -455,7 +455,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
               console.error(`Failed to retry job ${job.id}:`, error);
             }
           }
-          
+
           if (failCount === 0) {
             vscode.window.showInformationMessage(`Successfully retried ${successCount} job(s)`);
           } else {
@@ -463,7 +463,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
           }
         }
       }
-      
+
       // Refresh all relevant views
       ctx.jobTreeProvider.refresh();
       ctx.queueTreeProvider.refresh();
@@ -476,13 +476,13 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.deleteJob', async (...args: any[]) => {
       ctx.analytics.trackCommand('sidekiq.deleteJob', true);
-      
+
       const activeServer = ctx.serverRegistry.getActiveServer();
       if (!activeServer) {
         vscode.window.showWarningMessage('No server connected');
         return;
       }
-      
+
       // Handle both old single-item and new multi-select formats
       let items: any[] = [];
       if (args.length === 2 && Array.isArray(args[1])) {
@@ -492,31 +492,31 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
         // Old format: single item
         items = [args[0]];
       }
-      
+
       if (items.length === 0) {
         return;
       }
-      
+
       const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
-      
-      const confirmMessage = items.length === 1 
+
+      const confirmMessage = items.length === 1
         ? `Delete job ${items[0].job?.id || items[0].id}?`
         : `Delete ${items.length} job(s)?`;
-      
+
       const confirm = await vscode.window.showWarningMessage(
         confirmMessage,
         'Yes',
         'No'
       );
-      
+
       if (confirm === 'Yes') {
         let successCount = 0;
         let failCount = 0;
-        
+
         for (const treeItem of items) {
           const job = treeItem.job || treeItem;
           const category = treeItem.category || 'dead';
-          
+
           try {
             await client.deleteJob(activeServer, job, category as any);
             successCount++;
@@ -525,7 +525,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
             console.error(`Failed to delete job ${job.id}:`, error);
           }
         }
-        
+
         if (items.length === 1) {
           if (successCount === 1) {
             vscode.window.showInformationMessage('Job deleted successfully');
@@ -540,7 +540,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
           }
         }
       }
-      
+
       // Refresh all relevant views
       ctx.jobTreeProvider.refresh();
       ctx.queueTreeProvider.refresh();
@@ -553,28 +553,28 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.retrySelectedJobs', async (item: any, items: any[]) => {
       ctx.analytics.trackCommand('sidekiq.retrySelectedJobs', true);
-      
+
       const activeServer = ctx.serverRegistry.getActiveServer();
       if (!activeServer) {
         vscode.window.showWarningMessage('No server connected');
         return;
       }
-      
+
       // Use all selected items or fall back to single item
       const selectedItems = items && items.length > 0 ? items : [item];
-      
+
       const confirm = await vscode.window.showWarningMessage(
         `Retry ${selectedItems.length} job(s)?`,
         'Yes',
         'No'
       );
-      
+
       if (confirm === 'Yes') {
         let successCount = 0;
         let failCount = 0;
-        
+
         const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
-        
+
         for (const treeItem of selectedItems) {
           const job = treeItem.job || treeItem;
           try {
@@ -585,13 +585,13 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
             console.error(`Failed to retry job ${job.id}:`, error);
           }
         }
-        
+
         if (failCount === 0) {
           vscode.window.showInformationMessage(`Successfully retried ${successCount} job(s)`);
         } else {
           vscode.window.showWarningMessage(`Retried ${successCount} job(s), ${failCount} failed`);
         }
-        
+
         // Refresh views
         ctx.jobTreeProvider.refresh();
         ctx.queueTreeProvider.refresh();
@@ -605,28 +605,28 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.deleteSelectedJobs', async (item: any, items: any[]) => {
       ctx.analytics.trackCommand('sidekiq.deleteSelectedJobs', true);
-      
+
       const activeServer = ctx.serverRegistry.getActiveServer();
       if (!activeServer) {
         vscode.window.showWarningMessage('No server connected');
         return;
       }
-      
+
       // Use all selected items or fall back to single item
       const selectedItems = items && items.length > 0 ? items : [item];
-      
+
       const confirm = await vscode.window.showWarningMessage(
         `Delete ${selectedItems.length} job(s)?`,
         'Yes',
         'No'
       );
-      
+
       if (confirm === 'Yes') {
         let successCount = 0;
         let failCount = 0;
-        
+
         const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
-        
+
         for (const treeItem of selectedItems) {
           const job = treeItem.job || treeItem;
           const category = treeItem.category || 'dead';
@@ -638,13 +638,13 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
             console.error(`Failed to delete job ${job.id}:`, error);
           }
         }
-        
+
         if (failCount === 0) {
           vscode.window.showInformationMessage(`Successfully deleted ${successCount} job(s)`);
         } else {
           vscode.window.showWarningMessage(`Deleted ${successCount} job(s), ${failCount} failed`);
         }
-        
+
         // Refresh views
         ctx.jobTreeProvider.refresh();
         ctx.queueTreeProvider.refresh();
@@ -658,27 +658,27 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.clearQueue', async (item: any) => {
       ctx.analytics.trackCommand('sidekiq.clearQueue', true);
-      
+
       const activeServer = ctx.serverRegistry.getActiveServer();
       if (!activeServer) {
         vscode.window.showWarningMessage('No server connected');
         return;
       }
-      
+
       const queue = item.queue || item;
-      
+
       const confirm = await vscode.window.showWarningMessage(
         `Clear all jobs from queue "${queue.name}"? This cannot be undone.`,
         'Yes',
         'No'
       );
-      
+
       if (confirm === 'Yes') {
         try {
           const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
           await client.clearQueue(activeServer, queue.name);
           vscode.window.showInformationMessage(`Queue "${queue.name}" cleared successfully`);
-          
+
           // Refresh views
           ctx.queueTreeProvider.refresh();
           ctx.jobTreeProvider.refresh();
@@ -694,7 +694,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.pauseQueue', async (item: any) => {
       ctx.analytics.trackCommand('sidekiq.pauseQueue', true);
-      
+
       const queue = item.queue || item;
       vscode.window.showInformationMessage(`Queue pausing is not yet implemented. Queue: ${queue.name}`);
       // TODO: Implement queue pausing if using Sidekiq Pro/Enterprise
@@ -797,14 +797,122 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
       vscode.window.showInformationMessage('Views refreshed');
     })
   );
-  
-  // Cron job commands disabled - focusing on core Sidekiq features
-  /* Disabled cron job commands
+
+  /* Cron job commands disabled - focusing on core Sidekiq features
+  // Cron job commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('sidekiq.enableCronJob', async (item: any) => {}),
-    vscode.commands.registerCommand('sidekiq.disableCronJob', async (item: any) => {}),
-    vscode.commands.registerCommand('sidekiq.enqueueCronJob', async (item: any) => {}),
-    vscode.commands.registerCommand('sidekiq.deleteCronJob', async (item: any) => {})
+    vscode.commands.registerCommand('sidekiq.viewCronJob', async (cronJob: any) => {
+      ctx.analytics.trackCommand('sidekiq.viewCronJob', true);
+      
+      const activeStatus = cronJob.active ? 'Active' : 'Inactive';
+      
+      const lines = [
+        '**Name:** ' + cronJob.name,
+        '**Schedule:** ' + cronJob.cron,
+        '**Class:** ' + cronJob.class,
+        '**Queue:** ' + cronJob.queue,
+        '**Status:** ' + activeStatus
+      ];
+      
+      if (cronJob.lastEnqueueTime) {
+        lines.push('**Last Run:** ' + cronJob.lastEnqueueTime.toLocaleString());
+      }
+      
+      if (cronJob.nextEnqueueTime) {
+        lines.push('**Next Run:** ' + cronJob.nextEnqueueTime.toLocaleString());
+      }
+      
+      if (cronJob.description) {
+        lines.push('**Description:** ' + cronJob.description);
+      }
+      
+      if (cronJob.args && cronJob.args.length > 0) {
+        lines.push('', '**Arguments:**', '```json', JSON.stringify(cronJob.args, null, 2), '```');
+      }
+      
+      const outputChannel = vscode.window.createOutputChannel('Sidekiq Cron Job Details');
+      outputChannel.clear();
+      outputChannel.appendLine(lines.join('\n'));
+      outputChannel.show();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sidekiq.enableCronJob', async (item: any) => {
+      ctx.analytics.trackCommand('sidekiq.enableCronJob', true);
+      
+      const activeServer = ctx.serverRegistry.getActiveServer();
+      if (!activeServer) {
+        vscode.window.showWarningMessage('No server connected');
+        return;
+      }
+      
+      const cronJob = item.cronJob || item;
+      
+      try {
+        const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
+        await client.enableCronJob(activeServer, cronJob.name);
+        vscode.window.showInformationMessage('Enabled cron job "' + cronJob.name + '"');
+        ctx.cronTreeProvider.refresh();
+      } catch (error: any) {
+        vscode.window.showErrorMessage('Failed to enable cron job: ' + error.message);
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sidekiq.disableCronJob', async (item: any) => {
+      ctx.analytics.trackCommand('sidekiq.disableCronJob', true);
+      
+      const activeServer = ctx.serverRegistry.getActiveServer();
+      if (!activeServer) {
+        vscode.window.showWarningMessage('No server connected');
+        return;
+      }
+      
+      const cronJob = item.cronJob || item;
+      
+      try {
+        const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
+        await client.disableCronJob(activeServer, cronJob.name);
+        vscode.window.showInformationMessage('Disabled cron job "' + cronJob.name + '"');
+        ctx.cronTreeProvider.refresh();
+      } catch (error: any) {
+        vscode.window.showErrorMessage('Failed to disable cron job: ' + error.message);
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sidekiq.enqueueCronJob', async (item: any) => {
+      ctx.analytics.trackCommand('sidekiq.enqueueCronJob', true);
+      
+      const activeServer = ctx.serverRegistry.getActiveServer();
+      if (!activeServer) {
+        vscode.window.showWarningMessage('No server connected');
+        return;
+      }
+      
+      const cronJob = item.cronJob || item;
+      
+      const confirm = await vscode.window.showWarningMessage(
+        'Enqueue "' + cronJob.name + '" now?',
+        'Yes',
+        'No'
+      );
+      
+      if (confirm === 'Yes') {
+        try {
+          const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
+          await client.enqueueCronJobNow(activeServer, cronJob);
+          vscode.window.showInformationMessage('Enqueued cron job "' + cronJob.name + '"');
+          ctx.cronTreeProvider.refresh();
+          ctx.queueTreeProvider.refresh();
+        } catch (error: any) {
+          vscode.window.showErrorMessage('Failed to enqueue cron job: ' + error.message);
+        }
+      }
+    })
   );
   */
 }

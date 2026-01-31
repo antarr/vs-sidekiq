@@ -6,11 +6,13 @@ import { AnalyticsCollector } from './telemetry/analytics';
 import { DashboardProvider } from './ui/views/dashboardProvider';
 import { QueueDetailsProvider } from './ui/views/queueDetailsProvider';
 import { WorkerDetailsProvider } from './ui/views/workerDetailsProvider';
+import { JobDetailsProvider } from './ui/views/jobDetailsProvider';
+import { MetricsProvider } from './ui/views/metricsProvider';
 import { ServerTreeProvider } from './ui/views/serverTreeProvider';
 import { QueueTreeProvider } from './ui/views/queueTreeProvider';
 import { WorkerTreeProvider } from './ui/views/workerTreeProvider';
 import { JobTreeProvider } from './ui/views/jobTreeProvider';
-// import { CronTreeProvider } from './ui/views/cronTreeProvider'; // Disabled - focusing on core Sidekiq
+import { CronTreeProvider } from './ui/views/cronTreeProvider';
 import { registerCommands } from './commands';
 import { ServerEnvironment } from './data/models/server';
 import { FeatureTier } from './licensing/features';
@@ -33,16 +35,16 @@ export async function activate(context: vscode.ExtensionContext) {
   // Initialize license and analytics
   await licenseManager.initialize();
   analytics.initialize();
-  
+
   // Auto-activate hardcoded enterprise license for testing
   const ENTERPRISE_KEY = '11e2461b60dc5a8c2b88f97f4e46a4e166b2009e3982fc47c30e1c457ef370b14cef47622e2a71436d98f177bd4362543d7138f565a225e7264c8c0f02f9f351';
-  
+
   // Check for license key in settings first
   const config = vscode.workspace.getConfiguration('sidekiq');
   const licenseKey = config.get<string>('licenseKey');
-  
+
   let licenseActivated = false;
-  
+
   if (licenseKey && licenseKey !== ENTERPRISE_KEY) {
     try {
       await licenseManager.activateLicense(licenseKey);
@@ -52,7 +54,7 @@ export async function activate(context: vscode.ExtensionContext) {
       console.log('License activation from settings failed:', error);
     }
   }
-  
+
   // Always try to activate enterprise license if no other license is active
   if (!licenseActivated || licenseManager.getCurrentTier() === FeatureTier.FREE) {
     try {
@@ -66,7 +68,7 @@ export async function activate(context: vscode.ExtensionContext) {
       console.error('Enterprise license activation failed:', error);
     }
   }
-  
+
   // Debug license status
   console.log('=== License Status Debug ===');
   console.log('Current tier:', licenseManager.getCurrentTier());
@@ -85,20 +87,22 @@ export async function activate(context: vscode.ExtensionContext) {
   const dashboardProvider = new DashboardProvider(context, connectionManager, licenseManager);
   const queueDetailsProvider = new QueueDetailsProvider(context, connectionManager);
   const workerDetailsProvider = new WorkerDetailsProvider(context, connectionManager);
+  const jobDetailsProvider = new JobDetailsProvider(context, connectionManager);
+  const metricsProvider = new MetricsProvider(context, connectionManager, licenseManager);
   const serverTreeProvider = new ServerTreeProvider(serverRegistry, licenseManager);
   const queueTreeProvider = new QueueTreeProvider(connectionManager, serverRegistry, licenseManager);
   const workerTreeProvider = new WorkerTreeProvider(connectionManager, serverRegistry, licenseManager);
   const jobTreeProvider = new JobTreeProvider(connectionManager, serverRegistry, licenseManager);
-  // const cronTreeProvider = new CronTreeProvider(connectionManager, serverRegistry); // Disabled
+  const cronTreeProvider = new CronTreeProvider(connectionManager, serverRegistry, licenseManager);
 
   // Register tree data providers
   vscode.window.registerTreeDataProvider('sidekiqServers', serverTreeProvider);
   vscode.window.registerTreeDataProvider('sidekiqQueues', queueTreeProvider);
   vscode.window.registerTreeDataProvider('sidekiqWorkers', workerTreeProvider);
-  // vscode.window.registerTreeDataProvider('sidekiqCron', cronTreeProvider); // Disabled
-  
+  vscode.window.registerTreeDataProvider('sidekiqCron', cronTreeProvider); // Disabled
+
   console.log('Tree data providers registered successfully');
-  
+
   // Register jobs tree view with multi-select support
   const jobsTreeView = vscode.window.createTreeView('sidekiqJobs', {
     treeDataProvider: jobTreeProvider,
@@ -115,18 +119,19 @@ export async function activate(context: vscode.ExtensionContext) {
     dashboardProvider,
     queueDetailsProvider,
     workerDetailsProvider,
+    jobDetailsProvider,
+    metricsProvider,
     serverTreeProvider,
     queueTreeProvider,
     workerTreeProvider,
-    jobTreeProvider
-    // cronTreeProvider // Disabled
+    jobTreeProvider,
   });
 
   // Initialize status bar
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBarItem.command = 'sidekiq.switchServer';
   context.subscriptions.push(statusBarItem);
-  
+
   // Update status bar
   const updateStatusBar = () => {
     const activeServer = serverRegistry.getActiveServer();
@@ -143,7 +148,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   updateStatusBar();
   serverRegistry.onDidChangeActiveServer(updateStatusBar);
-  
+
   // Listen for server registry changes and refresh tree view
   serverRegistry.on('serversLoaded', () => {
     console.log('Servers loaded, refreshing server tree view');
@@ -170,16 +175,16 @@ export async function activate(context: vscode.ExtensionContext) {
       queueTreeProvider.refresh();
       workerTreeProvider.refresh();
       jobTreeProvider.refresh();
-      // cronTreeProvider.refresh(); // Disabled
+      cronTreeProvider.refresh(); // Disabled
     }
   }, Math.max(refreshInterval, 5000)); // Minimum 5 seconds
 
   // Auto-connect to saved servers
   await serverRegistry.loadSavedServers();
-  
+
   // Refresh tree view after loading servers
   serverTreeProvider.refresh();
-  
+
   // If no servers configured, add a default localhost server
   if (serverRegistry.getServerCount() === 0) {
     console.log('No servers configured, adding default localhost server');
@@ -189,10 +194,10 @@ export async function activate(context: vscode.ExtensionContext) {
       port: 6379,
       environment: ServerEnvironment.Development
     });
-    
+
     // Refresh tree view after adding default server
     serverTreeProvider.refresh();
-    
+
     // Try to connect to the default server
     try {
       await connectionManager.connect(defaultServer);
@@ -222,7 +227,7 @@ export function deactivate() {
   if (connectionManager) {
     connectionManager.dispose();
   }
-  
+
   // Track deactivation
   if (analytics) {
     analytics.track('extension_deactivated');
