@@ -244,7 +244,7 @@
     "esbuild": "^0.25.9",
     "eslint": "^9.33.0",
     "ioredis-mock": "^8.13.1",
-    "mocha": "^11.7.5",
+    "mocha": "11.3.0",
     "typescript": "^5.9.2"
   },
   "dependencies": {
