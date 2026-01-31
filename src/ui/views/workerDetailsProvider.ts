@@ -27,7 +27,7 @@ export class WorkerDetailsProvider {
     } else {
       this.panel = vscode.window.createWebviewPanel(
         'sidekiqWorkerDetails',
-        `Worker: ${worker.hostname}:${worker.pid}`,
+        `Worker: ${this.getShortHostname(worker.hostname)}:${worker.pid}`,
         vscode.ViewColumn.One,
         {
           enableScripts: true,
@@ -52,6 +52,9 @@ export class WorkerDetailsProvider {
             case 'refresh':
               await this.refreshWorkerDetails(this.currentServer, this.currentWorker);
               break;
+            case 'toggleQueues':
+              // Handle queue expansion toggle
+              break;
           }
         },
         undefined,
@@ -60,8 +63,38 @@ export class WorkerDetailsProvider {
     }
 
     // Update panel content
-    this.panel.title = `Worker: ${worker.hostname}:${worker.pid}`;
+    this.panel.title = `Worker: ${this.getShortHostname(worker.hostname)}:${worker.pid}`;
     this.panel.webview.html = await this.getWebviewContent(server, worker);
+  }
+
+  private getShortHostname(hostname: string): string {
+    // Extract a shorter version of hostname (remove .local, take first part)
+    return hostname.split('.')[0];
+  }
+
+  private getUptime(startedAt: Date): string {
+    const now = new Date();
+    const diff = now.getTime() - startedAt.getTime();
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days}d ${hours % 24}h`;
+    if (hours > 0) return `${hours}h ${minutes % 60}m`;
+    if (minutes > 0) return `${minutes}m`;
+    return `${seconds}s`;
+  }
+
+  private getJobDuration(job: any): string {
+    if (!job.enqueuedAt) return '-';
+    const now = new Date();
+    const diff = now.getTime() - new Date(job.enqueuedAt).getTime();
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+    return `${seconds}s`;
   }
 
   private async getWebviewContent(server: ServerConfig, initialWorker: Worker): Promise<string> {
@@ -70,6 +103,9 @@ export class WorkerDetailsProvider {
     const worker = workers.find(w => w.id === initialWorker.id) || initialWorker;
 
     const nonce = this.getNonce();
+    const shortHostname = this.getShortHostname(worker.hostname);
+    const uptime = this.getUptime(worker.started_at);
+    const jobDuration = worker.job ? this.getJobDuration(worker.job) : null;
 
     return `<!DOCTYPE html>
     <html lang="en">
@@ -77,196 +113,516 @@ export class WorkerDetailsProvider {
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
-      <title>Worker Details: ${this.escapeHtml(worker.hostname)}:${this.escapeHtml(worker.pid)}</title>
+      <title>Worker Details: ${this.escapeHtml(shortHostname)}:${this.escapeHtml(worker.pid)}</title>
       <style>
+        * {
+          box-sizing: border-box;
+        }
         body {
           font-family: var(--vscode-font-family);
           color: var(--vscode-foreground);
           background-color: var(--vscode-editor-background);
+          padding: 0;
+          margin: 0;
+          line-height: 1.5;
+        }
+        .container {
+          max-width: 1200px;
+          margin: 0 auto;
           padding: 20px;
         }
+
+        /* Header Section */
         .header {
           display: flex;
           justify-content: space-between;
-          align-items: center;
-          margin-bottom: 20px;
-          padding-bottom: 10px;
+          align-items: flex-start;
+          margin-bottom: 24px;
+          padding-bottom: 16px;
           border-bottom: 1px solid var(--vscode-panel-border);
         }
-        .stats-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 20px;
-          margin-bottom: 30px;
+        .header-left {
+          flex: 1;
         }
-        .stat-card {
-          background: var(--vscode-editor-background);
-          border: 1px solid var(--vscode-panel-border);
-          border-radius: 4px;
-          padding: 15px;
+        .header-title {
+          font-size: 20px;
+          font-weight: 600;
+          margin: 0 0 4px 0;
+          color: var(--vscode-foreground);
+          display: flex;
+          align-items: center;
+          gap: 10px;
         }
-        .stat-label {
+        .status-indicator {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          display: inline-block;
+          animation: pulse 2s ease-in-out infinite;
+        }
+        .status-indicator.idle {
+          background-color: var(--vscode-charts-green);
+        }
+        .status-indicator.busy {
+          background-color: var(--vscode-charts-orange);
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+        .header-subtitle {
           font-size: 12px;
           color: var(--vscode-descriptionForeground);
-          text-transform: uppercase;
-          margin-bottom: 5px;
+          margin: 0;
+          font-family: var(--vscode-editor-font-family);
         }
-        .stat-value {
-          font-size: 18px;
-          font-weight: bold;
-          word-break: break-all;
+        .header-actions {
+          display: flex;
+          gap: 8px;
         }
         .action-btn {
           background: var(--vscode-button-background);
           color: var(--vscode-button-foreground);
           border: none;
-          padding: 6px 12px;
-          border-radius: 4px;
+          padding: 6px 14px;
+          border-radius: 3px;
           cursor: pointer;
-          margin-left: 10px;
+          font-size: 13px;
+          font-family: var(--vscode-font-family);
+          transition: background-color 0.15s ease;
         }
         .action-btn:hover {
           background: var(--vscode-button-hoverBackground);
         }
-        .job-details {
-          background: var(--vscode-editor-background);
+        .action-btn:active {
+          transform: translateY(1px);
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 12px;
+          margin-bottom: 24px;
+        }
+        .stat-card {
+          background: var(--vscode-sideBar-background);
           border: 1px solid var(--vscode-panel-border);
-          padding: 20px;
-          border-radius: 4px;
+          border-radius: 6px;
+          padding: 14px 16px;
+          position: relative;
+          overflow: hidden;
+          transition: border-color 0.15s ease;
         }
-        .job-row {
-          display: flex;
-          margin-bottom: 10px;
-          border-bottom: 1px solid var(--vscode-panel-border);
-          padding-bottom: 10px;
+        .stat-card:hover {
+          border-color: var(--vscode-focusBorder);
         }
-        .job-row:last-child {
-          border-bottom: none;
+        .stat-card.highlight {
+          border-left: 3px solid var(--vscode-charts-blue);
         }
-        .job-label {
-          font-weight: bold;
-          width: 150px;
+        .stat-label {
+          font-size: 11px;
           color: var(--vscode-descriptionForeground);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin-bottom: 6px;
+          font-weight: 500;
         }
-        .job-value {
-          flex: 1;
+        .stat-value {
+          font-size: 18px;
+          font-weight: 600;
+          color: var(--vscode-foreground);
+          word-break: break-word;
         }
-        .job-args {
-          font-family: var(--vscode-editor-font-family);
-          font-size: 0.9em;
-          white-space: pre-wrap;
-          max-height: 200px;
-          overflow-y: auto;
-          background: var(--vscode-textBlockQuote-background);
-          padding: 10px;
-          border-radius: 2px;
-          margin-top: 5px;
+        .stat-value.small {
+          font-size: 15px;
         }
-        .queues-list {
-          margin-top: 10px;
+        .stat-value.large {
+          font-size: 24px;
         }
-        .queue-tag {
-          display: inline-block;
+        .stat-subtext {
+          font-size: 11px;
+          color: var(--vscode-descriptionForeground);
+          margin-top: 4px;
+        }
+
+        /* Status specific colors */
+        .status-value.idle {
+          color: var(--vscode-charts-green);
+        }
+        .status-value.busy {
+          color: var(--vscode-charts-orange);
+        }
+
+        /* Queues Section */
+        .queues-section {
+          background: var(--vscode-sideBar-background);
+          border: 1px solid var(--vscode-panel-border);
+          border-radius: 6px;
+          padding: 16px;
+          margin-bottom: 24px;
+        }
+        .queues-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 12px;
+          cursor: pointer;
+          user-select: none;
+        }
+        .queues-header:hover .queues-title {
+          color: var(--vscode-foreground);
+        }
+        .queues-title {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--vscode-descriptionForeground);
+          transition: color 0.15s ease;
+        }
+        .queues-badge {
           background: var(--vscode-badge-background);
           color: var(--vscode-badge-foreground);
           padding: 2px 8px;
           border-radius: 10px;
-          margin-right: 5px;
-          margin-bottom: 5px;
-          font-size: 0.9em;
-        }
-        .section-title {
-          font-size: 18px;
+          font-size: 11px;
           font-weight: 600;
-          margin-top: 30px;
-          margin-bottom: 15px;
+          margin-left: 8px;
+        }
+        .queues-toggle {
+          color: var(--vscode-descriptionForeground);
+          font-size: 11px;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .queues-toggle::after {
+          content: '▼';
+          font-size: 9px;
+          transition: transform 0.2s ease;
+        }
+        .queues-toggle.collapsed::after {
+          transform: rotate(-90deg);
+        }
+        .queues-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          max-height: 200px;
+          overflow-y: auto;
+          padding: 4px 0;
+        }
+        .queues-list.collapsed {
+          display: none;
+        }
+        .queue-tag {
+          display: inline-flex;
+          align-items: center;
+          background: var(--vscode-badge-background);
+          color: var(--vscode-badge-foreground);
+          padding: 4px 10px;
+          border-radius: 12px;
+          font-size: 12px;
+          font-family: var(--vscode-editor-font-family);
+          transition: all 0.15s ease;
+        }
+        .queue-tag:hover {
+          background: var(--vscode-list-hoverBackground);
+          transform: translateY(-1px);
+        }
+
+        /* Section Title */
+        .section-title {
+          font-size: 16px;
+          font-weight: 600;
+          margin: 0 0 12px 0;
+          color: var(--vscode-foreground);
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .section-icon {
+          width: 20px;
+          height: 20px;
+          opacity: 0.7;
+        }
+
+        /* Current Job Section */
+        .job-section {
+          margin-bottom: 24px;
+        }
+        .job-details {
+          background: var(--vscode-sideBar-background);
+          border: 1px solid var(--vscode-panel-border);
+          border-radius: 6px;
+          overflow: hidden;
+        }
+        .job-header {
+          background: var(--vscode-editor-background);
+          padding: 16px;
+          border-bottom: 1px solid var(--vscode-panel-border);
+        }
+        .job-class {
+          font-size: 16px;
+          font-weight: 600;
+          font-family: var(--vscode-editor-font-family);
+          color: var(--vscode-charts-blue);
+          margin-bottom: 6px;
+        }
+        .job-meta {
+          display: flex;
+          gap: 16px;
+          font-size: 12px;
+          color: var(--vscode-descriptionForeground);
+          flex-wrap: wrap;
+        }
+        .job-meta-item {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .job-meta-label {
+          opacity: 0.8;
+        }
+        .job-meta-value {
+          font-family: var(--vscode-editor-font-family);
+          font-weight: 500;
+        }
+        .job-body {
+          padding: 16px;
+        }
+        .job-row {
+          margin-bottom: 16px;
+        }
+        .job-row:last-child {
+          margin-bottom: 0;
+        }
+        .job-label {
+          font-size: 11px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          color: var(--vscode-descriptionForeground);
+          margin-bottom: 6px;
+        }
+        .job-value {
+          font-family: var(--vscode-editor-font-family);
+          font-size: 13px;
           color: var(--vscode-foreground);
         }
-        .status-idle {
-          color: var(--vscode-charts-green);
+        .job-args {
+          font-family: var(--vscode-editor-font-family);
+          font-size: 12px;
+          white-space: pre-wrap;
+          max-height: 300px;
+          overflow-y: auto;
+          background: var(--vscode-editor-background);
+          padding: 12px;
+          border-radius: 4px;
+          border: 1px solid var(--vscode-panel-border);
+          line-height: 1.6;
         }
-        .status-busy {
-          color: var(--vscode-charts-orange);
+
+        /* Empty State */
+        .empty-state {
+          background: var(--vscode-sideBar-background);
+          border: 1px dashed var(--vscode-panel-border);
+          border-radius: 6px;
+          padding: 48px 24px;
+          text-align: center;
+        }
+        .empty-icon {
+          font-size: 48px;
+          opacity: 0.3;
+          margin-bottom: 16px;
+        }
+        .empty-title {
+          font-size: 16px;
+          font-weight: 600;
+          color: var(--vscode-foreground);
+          margin-bottom: 8px;
+        }
+        .empty-message {
+          font-size: 13px;
+          color: var(--vscode-descriptionForeground);
+          line-height: 1.6;
+        }
+
+        /* Duration badge */
+        .duration-badge {
+          display: inline-flex;
+          align-items: center;
+          background: var(--vscode-charts-yellow);
+          color: var(--vscode-editor-background);
+          padding: 2px 8px;
+          border-radius: 10px;
+          font-size: 11px;
+          font-weight: 600;
+          margin-left: 8px;
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+          background: var(--vscode-scrollbarSlider-background);
+          border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+          background: var(--vscode-scrollbarSlider-hoverBackground);
         }
       </style>
     </head>
     <body>
-      <div class="header">
-        <h1>Worker: ${this.escapeHtml(worker.hostname)}:${this.escapeHtml(worker.pid)}</h1>
-        <div>
-          <button class="action-btn" onclick="refresh()">Refresh</button>
+      <div class="container">
+        <div class="header">
+          <div class="header-left">
+            <h1 class="header-title">
+              <span class="status-indicator ${worker.job ? 'busy' : 'idle'}"></span>
+              Worker: ${this.escapeHtml(shortHostname)}:${this.escapeHtml(worker.pid)}
+            </h1>
+            <p class="header-subtitle">Full hostname: ${this.escapeHtml(worker.hostname)}</p>
+          </div>
+          <div class="header-actions">
+            <button class="action-btn" onclick="refresh()">
+              <span>↻</span> Refresh
+            </button>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card highlight">
+            <div class="stat-label">Status</div>
+            <div class="stat-value large status-value ${worker.job ? 'busy' : 'idle'}">
+              ${worker.job ? 'Processing' : 'Idle'}
+            </div>
+            ${worker.job && jobDuration ? `<div class="stat-subtext">Running for ${jobDuration}</div>` : ''}
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-label">Uptime</div>
+            <div class="stat-value">${uptime}</div>
+            <div class="stat-subtext">${worker.started_at instanceof Date ? worker.started_at.toLocaleString() : worker.started_at}</div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-label">Environment</div>
+            <div class="stat-value small">${this.escapeHtml(server.name)}</div>
+            ${worker.tag ? `<div class="stat-subtext">Tag: ${this.escapeHtml(worker.tag)}</div>` : ''}
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-label">Process ID</div>
+            <div class="stat-value small">${this.escapeHtml(worker.pid)}</div>
+            <div class="stat-subtext">Thread: ${this.escapeHtml(worker.id.split(':').pop() || '-')}</div>
+          </div>
+        </div>
+
+        <div class="queues-section">
+          <div class="queues-header" onclick="toggleQueues()">
+            <div>
+              <span class="queues-title">Listening on Queues</span>
+              <span class="queues-badge">${worker.queues.length}</span>
+            </div>
+            <div class="queues-toggle" id="queues-toggle">
+              ${worker.queues.length > 10 ? 'Click to expand' : 'View all'}
+            </div>
+          </div>
+          <div class="queues-list ${worker.queues.length > 10 ? 'collapsed' : ''}" id="queues-list">
+            ${worker.queues.map(q => `<span class="queue-tag">${this.escapeHtml(q)}</span>`).join('')}
+          </div>
+        </div>
+
+        <div class="job-section">
+          <h2 class="section-title">
+            <svg class="section-icon" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 2a6 6 0 100 12A6 6 0 008 2zm0 11a5 5 0 110-10 5 5 0 010 10z"/>
+              <path d="M8 4.5a.5.5 0 01.5.5v3.5a.5.5 0 01-1 0V5a.5.5 0 01.5-.5z"/>
+              <path d="M8 10a.75.75 0 100 1.5.75.75 0 000-1.5z"/>
+            </svg>
+            Current Job
+          </h2>
+          ${worker.job ? `
+            <div class="job-details">
+              <div class="job-header">
+                <div class="job-class">${this.escapeHtml(worker.job.class)}</div>
+                <div class="job-meta">
+                  <div class="job-meta-item">
+                    <span class="job-meta-label">Queue:</span>
+                    <span class="job-meta-value">${this.escapeHtml(worker.job.queue)}</span>
+                  </div>
+                  <div class="job-meta-item">
+                    <span class="job-meta-label">Job ID:</span>
+                    <span class="job-meta-value">${this.escapeHtml(worker.job.id.substring(0, 12))}...</span>
+                  </div>
+                  ${jobDuration ? `
+                  <div class="job-meta-item">
+                    <span class="job-meta-label">Duration:</span>
+                    <span class="job-meta-value">${jobDuration}</span>
+                  </div>
+                  ` : ''}
+                </div>
+              </div>
+              <div class="job-body">
+                <div class="job-row">
+                  <div class="job-label">Created At</div>
+                  <div class="job-value">${worker.job.createdAt instanceof Date ? worker.job.createdAt.toLocaleString() : worker.job.createdAt}</div>
+                </div>
+                ${worker.job.enqueuedAt ? `
+                <div class="job-row">
+                  <div class="job-label">Enqueued At</div>
+                  <div class="job-value">${worker.job.enqueuedAt instanceof Date ? worker.job.enqueuedAt.toLocaleString() : worker.job.enqueuedAt}</div>
+                </div>
+                ` : ''}
+                ${worker.job.retryCount !== undefined && worker.job.retryCount > 0 ? `
+                <div class="job-row">
+                  <div class="job-label">Retry Count</div>
+                  <div class="job-value">${worker.job.retryCount}</div>
+                </div>
+                ` : ''}
+                <div class="job-row">
+                  <div class="job-label">Arguments</div>
+                  <div class="job-args">${this.escapeHtml(JSON.stringify(worker.job.args, null, 2))}</div>
+                </div>
+              </div>
+            </div>
+          ` : `
+            <div class="empty-state">
+              <div class="empty-icon">💤</div>
+              <div class="empty-title">Worker is Idle</div>
+              <div class="empty-message">
+                This worker is currently not processing any jobs.<br>
+                It's listening to ${worker.queues.length} queue${worker.queues.length !== 1 ? 's' : ''} and ready to process work.
+              </div>
+            </div>
+          `}
         </div>
       </div>
-
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-label">Status</div>
-          <div class="stat-value ${worker.job ? 'status-busy' : 'status-idle'}">
-            ${worker.job ? 'Processing' : 'Idle'}
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Started At</div>
-          <div class="stat-value">${worker.started_at instanceof Date ? worker.started_at.toLocaleString() : worker.started_at}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Tag</div>
-          <div class="stat-value">${this.escapeHtml(worker.tag || '-')}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Server</div>
-          <div class="stat-value" style="font-size: 16px; margin-top: 5px;">${this.escapeHtml(server.name)}</div>
-        </div>
-      </div>
-
-      <div class="stat-card" style="margin-bottom: 30px;">
-        <div class="stat-label">Listening on Queues</div>
-        <div class="queues-list">
-          ${worker.queues.map(q => `<span class="queue-tag">${this.escapeHtml(q)}</span>`).join('')}
-        </div>
-      </div>
-
-      <h2 class="section-title">Current Job</h2>
-      ${worker.job ? `
-        <div class="job-details">
-          <div class="job-row">
-            <div class="job-label">Class</div>
-            <div class="job-value"><strong>${this.escapeHtml(worker.job.class)}</strong></div>
-          </div>
-          <div class="job-row">
-            <div class="job-label">ID</div>
-            <div class="job-value">${this.escapeHtml(worker.job.id)}</div>
-          </div>
-          <div class="job-row">
-            <div class="job-label">Queue</div>
-            <div class="job-value">${this.escapeHtml(worker.job.queue)}</div>
-          </div>
-          <div class="job-row">
-            <div class="job-label">Created At</div>
-            <div class="job-value">${worker.job.createdAt instanceof Date ? worker.job.createdAt.toLocaleString() : worker.job.createdAt}</div>
-          </div>
-          ${worker.job.enqueuedAt ? `
-          <div class="job-row">
-            <div class="job-label">Enqueued At</div>
-            <div class="job-value">${worker.job.enqueuedAt instanceof Date ? worker.job.enqueuedAt.toLocaleString() : worker.job.enqueuedAt}</div>
-          </div>
-          ` : ''}
-          <div class="job-row" style="display: block;">
-            <div class="job-label" style="margin-bottom: 5px;">Arguments</div>
-            <div class="job-args">${this.escapeHtml(JSON.stringify(worker.job.args, null, 2))}</div>
-          </div>
-        </div>
-      ` : `
-        <div class="job-details" style="text-align: center; color: var(--vscode-descriptionForeground);">
-          Worker is currently idle.
-        </div>
-      `}
 
       <script nonce="${nonce}">
         const vscode = acquireVsCodeApi();
 
         function refresh() {
           vscode.postMessage({ command: 'refresh' });
+        }
+
+        function toggleQueues() {
+          const list = document.getElementById('queues-list');
+          const toggle = document.getElementById('queues-toggle');
+
+          if (list.classList.contains('collapsed')) {
+            list.classList.remove('collapsed');
+            toggle.classList.remove('collapsed');
+            toggle.textContent = 'Click to collapse';
+          } else {
+            list.classList.add('collapsed');
+            toggle.classList.add('collapsed');
+            toggle.textContent = 'Click to expand';
+          }
         }
       </script>
     </body>
