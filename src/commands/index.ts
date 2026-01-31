@@ -709,7 +709,7 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
       const currentTier = ctx.licenseManager.getCurrentTier();
       const maxServers = ctx.licenseManager.getMaxServerConnections();
       const license = ctx.licenseManager.getCurrentLicense();
-      
+
       const debugInfo = [
         '=== Sidekiq Manager Debug Info ===',
         `Current License Tier: ${currentTier}`,
@@ -726,14 +726,62 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
         'Feature Checks:',
         `  - Can use unlimited servers: ${ctx.licenseManager.canUseFeature(require('../licensing/features').Feature.UNLIMITED_SERVERS)}`,
         `  - Can use multi-server: ${ctx.licenseManager.canUseFeature(require('../licensing/features').Feature.MULTI_SERVER)}`,
-        '================================'
-      ].join('\n');
-      
-      console.log(debugInfo);
-      
+        ''
+      ];
+
+      // Add Redis debug info if server is connected
+      if (activeServer && ctx.connectionManager.isConnected(activeServer)) {
+        try {
+          const redis = await ctx.connectionManager.getConnection(activeServer);
+          const processes = await redis.smembers('processes');
+          const workers = await redis.smembers('workers');
+          const sidekiqWorkers = await redis.smembers('sidekiq:workers');
+          const sidekiqProcesses = await redis.smembers('sidekiq:processes');
+          const workerKeys = await redis.keys('*worker*');
+          const queueKeys = await redis.keys('queue:*');
+
+          debugInfo.push('Redis Keys:');
+          debugInfo.push(`  - Workers in 'processes' set (Sidekiq 6+): ${processes.length}`);
+          debugInfo.push(`  - Workers in 'workers' set (legacy): ${workers.length}`);
+          debugInfo.push(`  - Workers in 'sidekiq:processes' set: ${sidekiqProcesses.length}`);
+          debugInfo.push(`  - Workers in 'sidekiq:workers' set: ${sidekiqWorkers.length}`);
+          debugInfo.push(`  - Worker keys found: ${workerKeys.length}`);
+          debugInfo.push(`  - Queue keys found: ${queueKeys.length}`);
+
+          if (processes.length > 0) {
+            debugInfo.push('  - Active processes:');
+            for (const processId of processes) {
+              const processData = await redis.hgetall(processId);
+              if (processData.info) {
+                const info = JSON.parse(processData.info);
+                debugInfo.push(`    - ${processId}`);
+                debugInfo.push(`      Hostname: ${info.hostname}`);
+                debugInfo.push(`      PID: ${info.pid}`);
+                debugInfo.push(`      Tag: ${info.tag || 'none'}`);
+                debugInfo.push(`      Busy: ${processData.busy || 0}`);
+                debugInfo.push(`      Queues: ${info.queues.length} queues`);
+              }
+            }
+          }
+
+          if (workerKeys.length > 0) {
+            debugInfo.push('  - Sample worker keys:');
+            workerKeys.slice(0, 5).forEach(key => debugInfo.push(`    - ${key}`));
+          }
+        } catch (error: any) {
+          debugInfo.push('Redis Error:');
+          debugInfo.push(`  ${error.message}`);
+        }
+      }
+
+      debugInfo.push('================================');
+
+      const output = debugInfo.join('\n');
+      console.log(output);
+
       const outputChannel = vscode.window.createOutputChannel('Sidekiq Debug');
       outputChannel.clear();
-      outputChannel.appendLine(debugInfo);
+      outputChannel.appendLine(output);
       outputChannel.show();
     })
   );

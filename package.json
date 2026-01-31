@@ -166,6 +166,28 @@
       }
     },
     "menus": {
+      "view/title": [
+        {
+          "command": "sidekiq.refresh",
+          "when": "view == sidekiqServers",
+          "group": "navigation"
+        },
+        {
+          "command": "sidekiq.refresh",
+          "when": "view == sidekiqQueues",
+          "group": "navigation"
+        },
+        {
+          "command": "sidekiq.refresh",
+          "when": "view == sidekiqWorkers",
+          "group": "navigation"
+        },
+        {
+          "command": "sidekiq.refresh",
+          "when": "view == sidekiqJobs",
+          "group": "navigation"
+        }
+      ],
       "view/item/context": [
         {
           "command": "sidekiq.retryJob",

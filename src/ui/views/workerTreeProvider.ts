@@ -41,16 +41,18 @@ export class WorkerTreeProvider implements vscode.TreeDataProvider<TreeItem> {
     }
 
     try {
+      console.log(`Fetching workers for server: ${activeServer.name}`);
       const workers = await this.sidekiqClient.getWorkers(activeServer);
-      
+      console.log(`Found ${workers.length} workers`);
+
       if (workers.length === 0) {
-        return [new EmptyItem('No workers running')];
+        return [new EmptyItem('No workers running - Start Sidekiq workers to see them here')];
       }
 
       return workers.map(worker => new WorkerTreeItem(worker, activeServer.name));
     } catch (error) {
       console.error('Failed to fetch workers:', error);
-      return [new ErrorItem('Failed to load workers')];
+      return [new ErrorItem(`Failed to load workers: ${error instanceof Error ? error.message : String(error)}`)];
     }
   }
 }

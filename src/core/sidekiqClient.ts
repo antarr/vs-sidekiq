@@ -154,50 +154,80 @@ export class SidekiqClient {
 
   async getWorkers(server: ServerConfig): Promise<Worker[]> {
     const redis = await this.connectionManager.getConnection(server);
-    const workerIds = await redis.smembers('workers');
 
-    if (workerIds.length === 0) {
+    // Sidekiq 6+ uses 'processes' set to store worker processes
+    let processIds = await redis.smembers('processes');
+    console.log(`Found ${processIds.length} workers in 'processes' set`);
+
+    // Fallback to older 'workers' set for older Sidekiq versions
+    if (processIds.length === 0) {
+      processIds = await redis.smembers('workers');
+      console.log(`Found ${processIds.length} workers in 'workers' set (legacy)`);
+    }
+
+    // Try with namespace prefix
+    if (processIds.length === 0) {
+      processIds = await redis.smembers('sidekiq:processes');
+      console.log(`Found ${processIds.length} workers in 'sidekiq:processes' set`);
+    }
+
+    if (processIds.length === 0) {
+      console.log('No workers found in Redis. Make sure Sidekiq is running with workers.');
       return [];
     }
-    
-    const keys: string[] = [];
-    for (const id of workerIds) {
-      keys.push(`worker:${id}`);
-      keys.push(`worker:${id}:started`);
-    }
-
-    const results = await redis.mget(keys);
 
     const workers: Worker[] = [];
-    for (let i = 0; i < results.length; i += 2) {
-      const info = results[i];
-      const startedAt = results[i + 1];
-      const id = workerIds[i / 2];
 
-      if (info) {
-        try {
-          const data = JSON.parse(info);
-          workers.push({
-            id,
-            hostname: data.hostname || id.split(':')[0],
-            pid: data.pid || id.split(':')[1],
-            tag: data.tag,
-            started_at: startedAt ? new Date(parseInt(startedAt) * 1000) : new Date(),
-            job: data.payload ? {
-              id: data.payload.jid,
-              queue: data.queue,
-              class: data.payload.class,
-              args: data.payload.args,
-              createdAt: new Date(data.payload.created_at * 1000)
-            } : undefined,
-            queues: data.queues || []
-          });
-        } catch (error) {
-          console.error('Failed to parse worker:', error);
+    for (const processId of processIds) {
+      try {
+        // Get worker data - Sidekiq stores workers as hashes
+        const processData = await redis.hgetall(processId);
+
+        if (!processData || !processData.info) {
+          console.warn(`No info found for process ${processId}`);
+          continue;
         }
+
+        const info = JSON.parse(processData.info);
+        const busy = parseInt(processData.busy || '0', 10);
+
+        // Get current job if worker is busy
+        let currentJob: Worker['job'] = undefined;
+        if (busy > 0) {
+          // Try to get the current job from the worker data
+          const workKey = `${processId}:work`;
+          const workData = await redis.get(workKey);
+          if (workData) {
+            try {
+              const jobData = JSON.parse(workData);
+              currentJob = {
+                id: jobData.payload?.jid || '',
+                queue: jobData.queue || '',
+                class: jobData.payload?.class || '',
+                args: jobData.payload?.args || [],
+                createdAt: jobData.payload?.created_at ? new Date(jobData.payload.created_at * 1000) : new Date()
+              };
+            } catch (error) {
+              console.error('Failed to parse job data:', error);
+            }
+          }
+        }
+
+        workers.push({
+          id: processId,
+          hostname: info.hostname || processId.split(':')[0],
+          pid: info.pid || parseInt(processId.split(':')[1], 10),
+          tag: info.tag,
+          started_at: info.started_at ? new Date(info.started_at * 1000) : new Date(),
+          job: currentJob,
+          queues: info.queues || []
+        });
+      } catch (error) {
+        console.error(`Failed to parse worker ${processId}:`, error);
       }
     }
-    
+
+    console.log(`Returning ${workers.length} workers`);
     return workers;
   }
 
