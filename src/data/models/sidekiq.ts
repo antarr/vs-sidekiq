@@ -33,6 +33,12 @@ export interface Worker {
   job?: Job;
   queues: string[];
   serverId?: string;
+  // Process details
+  concurrency?: number;
+  busy?: number;
+  beat?: number;
+  quiet?: boolean;
+  rss?: number;
 }
 
 export interface SidekiqStats {

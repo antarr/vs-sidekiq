@@ -1,12 +1,10 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from '../../core/connectionManager';
-import { LicenseManager } from '../../licensing/licenseManager';
 import { SidekiqClient } from '../../core/sidekiqClient';
 import { Job } from '../../data/models/sidekiq';
 import { ServerRegistry } from '../../core/serverRegistry';
-import { Feature } from '../../licensing/features';
 
-type TreeItem = JobTreeItem | JobCategoryItem | NoServerItem | DisconnectedItem | EmptyItem | ErrorItem | UpgradeItem;
+type TreeItem = JobTreeItem | JobCategoryItem | NoServerItem | DisconnectedItem | EmptyItem | ErrorItem;
 
 export class JobTreeProvider implements vscode.TreeDataProvider<TreeItem> {
   private _onDidChangeTreeData: vscode.EventEmitter<TreeItem | undefined | null | void> = new vscode.EventEmitter<TreeItem | undefined | null | void>();
@@ -16,8 +14,7 @@ export class JobTreeProvider implements vscode.TreeDataProvider<TreeItem> {
 
   constructor(
     private connectionManager: ConnectionManager,
-    private serverRegistry: ServerRegistry,
-    private licenseManager: LicenseManager
+    private serverRegistry: ServerRegistry
   ) {
     this.sidekiqClient = new SidekiqClient(connectionManager);
   }
@@ -50,9 +47,9 @@ export class JobTreeProvider implements vscode.TreeDataProvider<TreeItem> {
     } else if (element instanceof JobCategoryItem) {
       // Load jobs for category
       try {
-        const maxJobs = this.licenseManager.getMaxJobHistory();
+        const maxJobs = 100; // Default limit
         let jobs: Job[] = [];
-        
+
         switch (element.category) {
           case 'scheduled':
             jobs = await this.sidekiqClient.getScheduledJobs(activeServer, 0, maxJobs - 1);
@@ -64,19 +61,12 @@ export class JobTreeProvider implements vscode.TreeDataProvider<TreeItem> {
             jobs = await this.sidekiqClient.getDeadJobs(activeServer, 0, maxJobs - 1);
             break;
         }
-        
+
         if (jobs.length === 0) {
           return [new EmptyItem(`No ${element.label.toLowerCase()}`)];
         }
-        
-        const items: TreeItem[] = jobs.map(job => new JobTreeItem(job, element.category, activeServer.name));
-        
-        // Add upgrade prompt if at limit
-        if (jobs.length >= maxJobs && !this.licenseManager.canUseFeature(Feature.UNLIMITED_SERVERS)) {
-          items.push(new UpgradeItem(`Showing first ${maxJobs} jobs. Upgrade for more.`));
-        }
-        
-        return items;
+
+        return jobs.map(job => new JobTreeItem(job, element.category, activeServer.name));
       } catch (error) {
         console.error(`Failed to fetch ${element.category} jobs:`, error);
         return [new ErrorItem(`Failed to load ${element.label.toLowerCase()}`)];
@@ -129,9 +119,13 @@ class JobTreeItem extends vscode.TreeItem {
     } else {
       this.iconPath = new vscode.ThemeIcon('circle-filled');
     }
-    
-    // Remove command to avoid interfering with selection
-    // Users can double-click or use context menu for actions
+
+    // Add command to view job details
+    this.command = {
+      command: 'sidekiq.viewJobDetails',
+      title: 'View Job Details',
+      arguments: [this]
+    };
   }
 
   private getDescription(): string {
@@ -195,14 +189,3 @@ class ErrorItem extends vscode.TreeItem {
   }
 }
 
-class UpgradeItem extends vscode.TreeItem {
-  constructor(message: string) {
-    super(message, vscode.TreeItemCollapsibleState.None);
-    this.iconPath = new vscode.ThemeIcon('star');
-    this.command = {
-      command: 'sidekiq.upgrade',
-      title: 'Upgrade'
-    };
-    this.tooltip = 'Upgrade to see more job history';
-  }
-}
