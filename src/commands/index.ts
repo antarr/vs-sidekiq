@@ -5,6 +5,7 @@ import { LicenseManager } from '../licensing/licenseManager';
 import { AnalyticsCollector } from '../telemetry/analytics';
 import { DashboardProvider } from '../ui/views/dashboardProvider';
 import { QueueDetailsProvider } from '../ui/views/queueDetailsProvider';
+import { WorkerDetailsProvider } from '../ui/views/workerDetailsProvider';
 import { ServerTreeProvider } from '../ui/views/serverTreeProvider';
 import { QueueTreeProvider } from '../ui/views/queueTreeProvider';
 import { WorkerTreeProvider } from '../ui/views/workerTreeProvider';
@@ -19,6 +20,7 @@ interface CommandContext {
   analytics: AnalyticsCollector;
   dashboardProvider: DashboardProvider;
   queueDetailsProvider: QueueDetailsProvider;
+  workerDetailsProvider: WorkerDetailsProvider;
   serverTreeProvider: ServerTreeProvider;
   queueTreeProvider: QueueTreeProvider;
   workerTreeProvider: WorkerTreeProvider;
@@ -27,8 +29,6 @@ interface CommandContext {
 }
 
 export function registerCommands(context: vscode.ExtensionContext, ctx: CommandContext) {
-  let workerOutputChannel: vscode.OutputChannel | undefined;
-
   // Connect to server command
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.connect', async () => {
@@ -322,42 +322,8 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
         return;
       }
       
-      // Show worker details
-      const lines = [
-        `Worker: ${worker.hostname}:${worker.pid}`,
-        `ID: ${worker.id}`,
-        `Hostname: ${worker.hostname}`,
-        `PID: ${worker.pid}`,
-        `Started At: ${worker.started_at instanceof Date ? worker.started_at.toLocaleString() : worker.started_at}`,
-        `Queues: ${worker.queues.join(', ')}`,
-      ];
-
-      if (worker.tag) {
-        lines.push(`Tag: ${worker.tag}`);
-      }
-
-      if (worker.job) {
-        lines.push('', '=== Current Job ===');
-        lines.push(`Class: ${worker.job.class}`);
-        lines.push(`ID: ${worker.job.id}`);
-        lines.push(`Queue: ${worker.job.queue}`);
-        lines.push(`Created At: ${worker.job.createdAt instanceof Date ? worker.job.createdAt.toLocaleString() : worker.job.createdAt}`);
-
-        if (worker.job.enqueuedAt) {
-           lines.push(`Enqueued At: ${worker.job.enqueuedAt instanceof Date ? worker.job.enqueuedAt.toLocaleString() : worker.job.enqueuedAt}`);
-        }
-
-        lines.push('', `Arguments:`, JSON.stringify(worker.job.args, null, 2));
-      } else {
-        lines.push('', 'Status: Idle');
-      }
-
-      if (!workerOutputChannel) {
-        workerOutputChannel = vscode.window.createOutputChannel('Sidekiq Worker Details');
-      }
-      workerOutputChannel.clear();
-      workerOutputChannel.appendLine(lines.join('\n'));
-      workerOutputChannel.show();
+      // Show detailed worker view
+      await ctx.workerDetailsProvider.showWorkerDetails(activeServer, worker);
     })
   );
 
