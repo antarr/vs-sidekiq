@@ -1,18 +1,15 @@
 import * as vscode from 'vscode';
 import { ServerRegistry } from '../../core/serverRegistry';
-import { LicenseManager } from '../../licensing/licenseManager';
 import { ServerConfig } from '../../data/models/server';
-import { Feature } from '../../licensing/features';
 
-type TreeItem = ServerTreeItem | AddServerItem | UpgradeItem;
+type TreeItem = ServerTreeItem | AddServerItem;
 
 export class ServerTreeProvider implements vscode.TreeDataProvider<TreeItem> {
   private _onDidChangeTreeData: vscode.EventEmitter<TreeItem | undefined | null | void> = new vscode.EventEmitter<TreeItem | undefined | null | void>();
   readonly onDidChangeTreeData: vscode.Event<TreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
   constructor(
-    private serverRegistry: ServerRegistry,
-    private licenseManager: LicenseManager
+    private serverRegistry: ServerRegistry
   ) {}
 
   refresh(): void {
@@ -28,15 +25,10 @@ export class ServerTreeProvider implements vscode.TreeDataProvider<TreeItem> {
       // Root level - show servers
       const servers = this.serverRegistry.getAllServers();
       const activeServer = this.serverRegistry.getActiveServer();
-      const maxServers = this.licenseManager.getMaxServerConnections();
-      const currentTier = this.licenseManager.getCurrentTier();
-      const canUseUnlimitedServers = this.licenseManager.canUseFeature(Feature.UNLIMITED_SERVERS);
-      
+
       console.log(`ServerTreeProvider.getChildren: Found ${servers.length} servers`);
       console.log(`Active server: ${activeServer?.name || 'none'}`);
-      console.log(`License tier: ${currentTier}, Max servers: ${maxServers}`);
-      console.log(`Can use unlimited servers: ${canUseUnlimitedServers}`);
-      
+
       const items: TreeItem[] = servers.map(server => {
         console.log(`Creating tree item for server: ${server.name} (${server.id})`);
         return new ServerTreeItem(
@@ -46,14 +38,8 @@ export class ServerTreeProvider implements vscode.TreeDataProvider<TreeItem> {
         );
       });
 
-      // Add "Add Server" item if under limit
-      if (servers.length < maxServers) {
-        console.log(`Adding "Add Server" item (${servers.length}/${maxServers})`);
-        items.push(new AddServerItem());
-      } else if (!canUseUnlimitedServers) {
-        console.log(`Adding "Upgrade" item (${servers.length}/${maxServers}, unlimited: ${canUseUnlimitedServers})`);
-        items.push(new UpgradeItem());
-      }
+      // Add "Add Server" item
+      items.push(new AddServerItem());
 
       console.log(`ServerTreeProvider returning ${items.length} items`);
       return Promise.resolve(items);
@@ -104,15 +90,3 @@ class AddServerItem extends vscode.TreeItem {
   }
 }
 
-class UpgradeItem extends vscode.TreeItem {
-  constructor() {
-    super('Upgrade for more servers', vscode.TreeItemCollapsibleState.None);
-    this.iconPath = new vscode.ThemeIcon('star');
-    this.command = {
-      command: 'sidekiq.upgrade',
-      title: 'Upgrade'
-    };
-    this.contextValue = 'upgrade';
-    this.tooltip = 'Upgrade to Pro or Team plan for more server connections';
-  }
-}

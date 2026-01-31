@@ -2,7 +2,7 @@
   "name": "sidekiq-manager",
   "displayName": "Sidekiq Manager",
   "description": "Comprehensive Sidekiq monitoring and management directly in VS Code",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "publisher": "santarrb",
   "engines": {
     "vscode": "^1.74.0"
@@ -74,7 +74,8 @@
       {
         "command": "sidekiq.viewJobDetails",
         "title": "View Job Details",
-        "category": "Sidekiq"
+        "category": "Sidekiq",
+        "icon": "$(eye)"
       },
       {
         "command": "sidekiq.retrySelectedJobs",
@@ -180,11 +181,6 @@
           "default": [],
           "description": "Configured Sidekiq servers"
         },
-        "sidekiq.licenseKey": {
-          "type": "string",
-          "default": "",
-          "description": "License key for premium features"
-        },
         "sidekiq.refreshInterval": {
           "type": "number",
           "default": 30,
@@ -250,6 +246,11 @@
           "command": "sidekiq.selectServer",
           "when": "view == sidekiqServers && viewItem == server",
           "group": "1_server@1"
+        },
+        {
+          "command": "sidekiq.viewJobDetails",
+          "when": "view == sidekiqJobs && viewItem =~ /job-/",
+          "group": "inline"
         },
         {
           "command": "sidekiq.retryJob",
@@ -326,7 +327,7 @@
     "url": "git+https://github.com/antarr/vs-sidekiq.git"
   },
   "author": "Sidekiq Tools",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/antarr/vs-sidekiq/issues"

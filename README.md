@@ -1,5 +1,8 @@
 # Sidekiq Manager for VS Code
 
+> **⚠️ Status: Active Development**
+> This extension is in active development. APIs and features may change. Bug reports and contributions welcome!
+
 A comprehensive Visual Studio Code extension for monitoring and managing Sidekiq queues, jobs, and workers directly from your IDE. No more switching to a web browser for Sidekiq administration!
 
 ## Features
@@ -37,11 +40,6 @@ A comprehensive Visual Studio Code extension for monitoring and managing Sidekiq
 - Worker process information
 - Graceful worker termination
 
-### 💰 Freemium Model
-- **Free Tier**: Single server connection, basic features
-- **Pro Tier ($9/mo)**: 5 servers, bulk operations, advanced metrics
-- **Team Tier ($29/mo)**: Unlimited servers, team collaboration, analytics
-- **Enterprise**: Custom pricing, SSO, compliance, white-label
 
 ## Installation
 
@@ -81,8 +79,6 @@ A comprehensive Visual Studio Code extension for monitoring and managing Sidekiq
 - `Sidekiq: Open Dashboard` - Open the Sidekiq dashboard
 - `Sidekiq: Switch Server` - Switch between connected servers
 - `Sidekiq: Refresh` - Refresh all views
-- `Sidekiq: Remove Server` - Remove a server connection
-- `Sidekiq: Activate License` - Activate a pro/team license
 
 ## Keyboard Shortcuts
 
@@ -105,41 +101,12 @@ A comprehensive Visual Studio Code extension for monitoring and managing Sidekiq
 - Redis server with Sidekiq
 - Network access to Redis server
 
-## License Tiers
-
-### Community (Free)
-- 1 server connection
-- Basic dashboard
-- Queue and job viewing
-- Worker monitoring
-- Community support
-
-### Professional ($9/month)
-- 5 server connections
-- Bulk operations
-- Advanced metrics
-- Custom refresh rates
-- Email support
-
-### Business ($29/month)
-- Unlimited servers
-- Team collaboration
-- Historical analytics
-- Webhook integrations
-- Priority support
-
-### Enterprise (Custom)
-- SSO integration
-- Compliance reporting
-- Custom features
-- 24/7 support
-- SLA guarantee
-
 ## Support
 
-- GitHub Issues: [github.com/antarr/vs-sidekiq/issues](https://github.com/antarr/vs-sidekiq/issues)
-- Documentation: [sidekiq-manager.com/docs](https://sidekiq-manager.com/docs)
-- Email: support@sidekiq-manager.com
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/antarr/vs-sidekiq/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/antarr/vs-sidekiq/discussions)
+- 📖 **Documentation**: See this README and inline code comments
+- 💼 **Commercial Licensing**: Open a GitHub issue tagged with `commercial-license`
 
 ## Contributing
 
@@ -147,7 +114,33 @@ Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md)
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+This project is licensed under the **Polyform Noncommercial License 1.0.0**.
+
+### What This Means
+
+✅ **You CAN:**
+- Use this software for personal projects
+- Use this software for educational purposes
+- Contribute to the project
+- Fork and modify the code
+- Use at non-profit organizations
+
+❌ **You CANNOT (without a commercial license):**
+- Use this software at for-profit companies
+- Include it in paid products or services
+- Provide commercial consulting using this software
+- Resell or redistribute commercially
+
+### Commercial Use
+
+If you want to use this software commercially, please contact the maintainers for a commercial license. We offer flexible licensing for:
+- Small businesses and startups
+- Individual consultants
+- Enterprise organizations
+
+For commercial licensing inquiries, please open an issue on GitHub or contact the maintainers.
+
+See [LICENSE](LICENSE) file for complete terms.
 
 ---
 

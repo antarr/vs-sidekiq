@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from '../core/connectionManager';
 import { ServerRegistry } from '../core/serverRegistry';
-import { LicenseManager } from '../licensing/licenseManager';
 import { AnalyticsCollector } from '../telemetry/analytics';
 import { DashboardProvider } from '../ui/views/dashboardProvider';
 import { QueueDetailsProvider } from '../ui/views/queueDetailsProvider';
@@ -17,7 +16,6 @@ import { ServerEnvironment } from '../data/models/server';
 interface CommandContext {
   connectionManager: ConnectionManager;
   serverRegistry: ServerRegistry;
-  licenseManager: LicenseManager;
   analytics: AnalyticsCollector;
   dashboardProvider: DashboardProvider;
   queueDetailsProvider: QueueDetailsProvider;
@@ -35,31 +33,6 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.connect', async () => {
       ctx.analytics.trackCommand('sidekiq.connect', true);
-
-      // Check server limit
-      const maxServers = ctx.licenseManager.getMaxServerConnections();
-      const currentServers = ctx.serverRegistry.getServerCount();
-      const currentTier = ctx.licenseManager.getCurrentTier();
-
-      console.log(`License check: Current tier: ${currentTier}, Max servers: ${maxServers}, Current servers: ${currentServers}`);
-
-      if (currentServers >= maxServers) {
-        console.log(`Server limit reached. Current: ${currentServers}, Max: ${maxServers}`);
-        const upgrade = await vscode.window.showWarningMessage(
-          `You've reached the maximum of ${maxServers} server connections for your ${currentTier} plan.`,
-          'Upgrade Plan',
-          'Remove Server'
-        );
-
-        if (upgrade === 'Upgrade Plan') {
-          vscode.commands.executeCommand('sidekiq.upgrade');
-        } else if (upgrade === 'Remove Server') {
-          vscode.commands.executeCommand('sidekiq.removeServer');
-        }
-        return;
-      }
-
-      console.log(`Server limit check passed. Adding new server...`);
 
       // Get server details
       const name = await vscode.window.showInputBox({
@@ -225,41 +198,6 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
     })
   );
 
-  // Upgrade command
-  context.subscriptions.push(
-    vscode.commands.registerCommand('sidekiq.upgrade', async () => {
-      ctx.analytics.trackCommand('sidekiq.upgrade', true);
-      ctx.analytics.trackUpgradeTrigger('manual', ctx.licenseManager.getCurrentTier(), 'pro' as any);
-
-      const url = 'https://sidekiq-manager.com/pricing';
-      vscode.env.openExternal(vscode.Uri.parse(url));
-    })
-  );
-
-  // License activation command
-  context.subscriptions.push(
-    vscode.commands.registerCommand('sidekiq.activateLicense', async () => {
-      ctx.analytics.trackCommand('sidekiq.activateLicense', true);
-
-      const key = await vscode.window.showInputBox({
-        prompt: 'Enter your license key',
-        placeHolder: 'XXXX-XXXX-XXXX-XXXX',
-        password: true
-      });
-
-      if (key) {
-        try {
-          await ctx.licenseManager.activateLicense(key);
-          vscode.window.showInformationMessage('License activated successfully!');
-
-          // Refresh all views to show new features
-          vscode.commands.executeCommand('sidekiq.refresh');
-        } catch (error: any) {
-          vscode.window.showErrorMessage(`License activation failed: ${error.message}`);
-        }
-      }
-    })
-  );
 
   // Refresh UI command (internal)
   context.subscriptions.push(
@@ -326,6 +264,36 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
 
       // Show dashboard
       await ctx.dashboardProvider.showDashboard(server);
+    })
+  );
+
+  // View metrics command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sidekiq.viewMetrics', async (server?: any) => {
+      ctx.analytics.trackCommand('sidekiq.viewMetrics', true);
+
+      // Use provided server or get active server
+      const targetServer = server || ctx.serverRegistry.getActiveServer();
+      if (!targetServer) {
+        vscode.window.showWarningMessage('No server connected. Please connect to a server first.');
+        return;
+      }
+
+      // If a server was provided, set as active and connect if needed
+      if (server && server.id) {
+        ctx.serverRegistry.setActiveServer(server.id);
+        if (!ctx.connectionManager.isConnected(server)) {
+          try {
+            await ctx.connectionManager.connect(server);
+          } catch (error: any) {
+            vscode.window.showErrorMessage(`Failed to connect to ${server.name}: ${error.message}`);
+            return;
+          }
+        }
+      }
+
+      // Show metrics view
+      await ctx.metricsProvider.showMetrics(targetServer);
     })
   );
 
@@ -706,26 +674,14 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
     vscode.commands.registerCommand('sidekiq.debug', async () => {
       const servers = ctx.serverRegistry.getAllServers();
       const activeServer = ctx.serverRegistry.getActiveServer();
-      const currentTier = ctx.licenseManager.getCurrentTier();
-      const maxServers = ctx.licenseManager.getMaxServerConnections();
-      const license = ctx.licenseManager.getCurrentLicense();
 
       const debugInfo = [
         '=== Sidekiq Manager Debug Info ===',
-        `Current License Tier: ${currentTier}`,
-        `Is Licensed: ${ctx.licenseManager.isLicensed()}`,
-        `Max Server Connections: ${maxServers}`,
-        `License Object: ${JSON.stringify(license, null, 2)}`,
-        '',
         `Total Servers Configured: ${servers.length}`,
         `Active Server: ${activeServer ? activeServer.name + ' (' + activeServer.id + ')' : 'None'}`,
         '',
         'Configured Servers:',
         ...servers.map(s => `  - ${s.name} (${s.id}) - ${s.host}:${s.port} [${s.environment}]`),
-        '',
-        'Feature Checks:',
-        `  - Can use unlimited servers: ${ctx.licenseManager.canUseFeature(require('../licensing/features').Feature.UNLIMITED_SERVERS)}`,
-        `  - Can use multi-server: ${ctx.licenseManager.canUseFeature(require('../licensing/features').Feature.MULTI_SERVER)}`,
         ''
       ];
 

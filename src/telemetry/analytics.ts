@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { Feature, FeatureTier } from '../licensing/features';
 import { v4 as uuidv4 } from 'uuid';
 
 interface AnalyticsEvent {
@@ -55,19 +54,10 @@ export class AnalyticsCollector {
     }
   }
 
-  trackFeatureUsage(feature: Feature, allowed: boolean): void {
+  trackFeatureUsage(feature: string, allowed: boolean): void {
     this.track('feature_used', {
       feature,
-      allowed,
-      tier: this.getCurrentTier()
-    });
-  }
-
-  trackUpgradeTrigger(trigger: string, fromTier: FeatureTier, toTier: FeatureTier): void {
-    this.track('upgrade_trigger', {
-      trigger,
-      from_tier: fromTier,
-      to_tier: toTier
+      allowed
     });
   }
 
@@ -143,11 +133,6 @@ export class AnalyticsCollector {
     return this.context.extension.packageJSON.version || '0.0.0';
   }
 
-  private getCurrentTier(): string {
-    // This would get the actual tier from LicenseManager
-    // For now, return 'free'
-    return 'free';
-  }
 
   private getUserId(): string | undefined {
     // Generate or retrieve a persistent anonymous user ID

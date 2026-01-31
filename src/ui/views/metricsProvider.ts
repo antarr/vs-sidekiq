@@ -1,8 +1,6 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from '../../core/connectionManager';
-import { LicenseManager } from '../../licensing/licenseManager';
 import { ServerConfig } from '../../data/models/server';
-import { TIER_NAMES } from '../../licensing/features';
 
 interface MetricData {
   key: string;
@@ -34,8 +32,7 @@ export class MetricsProvider {
 
   constructor(
     private context: vscode.ExtensionContext,
-    connectionManager: ConnectionManager,
-    private licenseManager: LicenseManager
+    connectionManager: ConnectionManager
   ) {
     this.connectionManager = connectionManager;
   }
@@ -95,9 +92,6 @@ export class MetricsProvider {
   }
 
   private getWebviewHtml(_server: ServerConfig): string {
-    const tier = this.licenseManager.getCurrentTier();
-    const tierName = TIER_NAMES[tier];
-
     return `<!DOCTYPE html>
     <html lang="en">
     <head>
@@ -413,7 +407,6 @@ export class MetricsProvider {
           </div>
         </div>
         <div class="header-actions">
-          <span class="tier-badge">${tierName}</span>
           <button class="btn" onclick="refresh()">
             <span>&#x1F504;</span> Refresh
           </button>
@@ -771,7 +764,7 @@ export class MetricsProvider {
       clearInterval(this.autoRefreshTimer);
     }
 
-    const interval = this.licenseManager.getRefreshInterval();
+    const interval = 30000; // 30 seconds default
 
     this.autoRefreshTimer = setInterval(async () => {
       if (this.panel) {

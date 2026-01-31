@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from '../../core/connectionManager';
-import { LicenseManager } from '../../licensing/licenseManager';
 import { SidekiqClient } from '../../core/sidekiqClient';
 import { CronJob } from '../../data/models/sidekiq';
 import { ServerRegistry } from '../../core/serverRegistry';
@@ -15,10 +14,8 @@ export class CronTreeProvider implements vscode.TreeDataProvider<TreeItem> {
 
   constructor(
     private connectionManager: ConnectionManager,
-    private serverRegistry: ServerRegistry,
-    licenseManager: LicenseManager
+    private serverRegistry: ServerRegistry
   ) {
-    void licenseManager; // For future use
     this.sidekiqClient = new SidekiqClient(connectionManager);
   }
 

@@ -1,9 +1,7 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from '../../core/connectionManager';
-import { LicenseManager } from '../../licensing/licenseManager';
 import { ServerConfig } from '../../data/models/server';
 import { SidekiqClient } from '../../core/sidekiqClient';
-import { FeatureTier, TIER_NAMES } from '../../licensing/features';
 import { SidekiqStats } from '../../data/models/sidekiq';
 
 interface HistoricalDataPoint {
@@ -24,8 +22,7 @@ export class DashboardProvider {
 
   constructor(
     private context: vscode.ExtensionContext,
-    connectionManager: ConnectionManager,
-    private licenseManager: LicenseManager
+    connectionManager: ConnectionManager
   ) {
     this.sidekiqClient = new SidekiqClient(connectionManager);
   }
@@ -69,12 +66,6 @@ export class DashboardProvider {
           case 'refresh':
             await this.updateDashboardData(server);
             break;
-          case 'upgrade':
-            vscode.commands.executeCommand('sidekiq.upgrade');
-            break;
-          case 'activateLicense':
-            vscode.commands.executeCommand('sidekiq.activateLicense');
-            break;
           case 'retryJob':
             await this.handleRetryJob(server, message.job);
             break;
@@ -104,9 +95,6 @@ export class DashboardProvider {
   }
 
   private getWebviewHtml(_server: ServerConfig): string {
-    const tier = this.licenseManager.getCurrentTier();
-    const tierName = TIER_NAMES[tier];
-
     return `<!DOCTYPE html>
     <html lang="en">
     <head>
@@ -721,10 +709,6 @@ export class DashboardProvider {
           </div>
         </div>
         <div class="header-actions">
-          <span class="tier-badge">${tierName}</span>
-          <button class="btn btn-secondary" onclick="activateLicense()">
-            <span>&#x1F511;</span> License
-          </button>
           <button class="btn btn-secondary" onclick="exportData()">
             <span>&#x1F4BE;</span> Export
           </button>
@@ -733,20 +717,6 @@ export class DashboardProvider {
           </button>
         </div>
       </div>
-
-      ${tier === FeatureTier.FREE ? `
-      <div class="upgrade-banner">
-        <div>
-          <strong>Unlock Premium Features</strong>
-          <div style="font-size: 12px; margin-top: 4px; opacity: 0.9;">
-            Get real-time updates, advanced analytics, custom alerts, and more!
-          </div>
-        </div>
-        <button class="btn" onclick="upgrade()">
-          <span>&#x1F680;</span> Upgrade Now
-        </button>
-      </div>
-      ` : ''}
 
       <!-- Stats Cards -->
       <div class="stats-grid">
@@ -954,14 +924,6 @@ export class DashboardProvider {
         function refresh() {
           lastUpdateTime = Date.now();
           vscode.postMessage({ command: 'refresh' });
-        }
-
-        function upgrade() {
-          vscode.postMessage({ command: 'upgrade' });
-        }
-
-        function activateLicense() {
-          vscode.postMessage({ command: 'activateLicense' });
         }
 
         function exportData() {
@@ -1526,7 +1488,7 @@ export class DashboardProvider {
       clearInterval(this.autoRefreshTimer);
     }
 
-    const interval = this.licenseManager.getRefreshInterval();
+    const interval = 30000; // 30 seconds default
 
     this.autoRefreshTimer = setInterval(async () => {
       if (this.panel) {
