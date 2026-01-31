@@ -7,6 +7,8 @@ import { Worker } from '../../data/models/sidekiq';
 export class WorkerDetailsProvider {
   private panel: vscode.WebviewPanel | undefined;
   private sidekiqClient: SidekiqClient;
+  private currentServer: ServerConfig | undefined;
+  private currentWorker: Worker | undefined;
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -16,6 +18,9 @@ export class WorkerDetailsProvider {
   }
 
   async showWorkerDetails(server: ServerConfig, worker: Worker): Promise<void> {
+    this.currentServer = server;
+    this.currentWorker = worker;
+
     // Create or show panel
     if (this.panel) {
       this.panel.reveal();
@@ -32,25 +37,31 @@ export class WorkerDetailsProvider {
 
       this.panel.onDidDispose(() => {
         this.panel = undefined;
+        this.currentServer = undefined;
+        this.currentWorker = undefined;
       });
+
+      // Set up message handling only once when panel is created
+      this.panel.webview.onDidReceiveMessage(
+        async message => {
+          if (!this.currentServer || !this.currentWorker) {
+            return;
+          }
+
+          switch (message.command) {
+            case 'refresh':
+              await this.refreshWorkerDetails(this.currentServer, this.currentWorker);
+              break;
+          }
+        },
+        undefined,
+        this.context.subscriptions
+      );
     }
 
     // Update panel content
     this.panel.title = `Worker: ${worker.hostname}:${worker.pid}`;
     this.panel.webview.html = await this.getWebviewContent(server, worker);
-
-    // Set up message handling
-    this.panel.webview.onDidReceiveMessage(
-      async message => {
-        switch (message.command) {
-          case 'refresh':
-            await this.refreshWorkerDetails(server, worker);
-            break;
-        }
-      },
-      undefined,
-      this.context.subscriptions
-    );
   }
 
   private async getWebviewContent(server: ServerConfig, initialWorker: Worker): Promise<string> {
