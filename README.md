@@ -116,21 +116,6 @@ Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md)
 
 This project is licensed under the **Polyform Noncommercial License 1.0.0**.
 
-### What This Means
-
-✅ **You CAN:**
-- Use this software for personal projects
-- Use this software for educational purposes
-- Contribute to the project
-- Fork and modify the code
-- Use at non-profit organizations
-
-❌ **You CANNOT (without a commercial license):**
-- Use this software at for-profit companies
-- Include it in paid products or services
-- Provide commercial consulting using this software
-- Resell or redistribute commercially
-
 ### Commercial Use
 
 If you want to use this software commercially, please contact the maintainers for a commercial license. We offer flexible licensing for:
