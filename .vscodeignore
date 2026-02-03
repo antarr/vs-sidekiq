@@ -11,5 +11,4 @@ tsconfig.json
 node_modules/**
 *.vsix
 SPEC.md
-MONETIZATION_STRATEGY.md
-FREEMIUM_IMPLEMENTATION.md
+.env

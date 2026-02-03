@@ -1,5 +1,11 @@
 # Sidekiq Manager for VS Code
 
+[![VS Code Marketplace](https://img.shields.io/vscode-marketplace/v/antarrb.sidekiq-manager.svg?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=antarrb.sidekiq-manager)
+[![Installs](https://img.shields.io/vscode-marketplace/i/antarrb.sidekiq-manager.svg)](https://marketplace.visualstudio.com/items?itemName=antarrb.sidekiq-manager)
+[![Rating](https://img.shields.io/vscode-marketplace/r/antarrb.sidekiq-manager.svg)](https://marketplace.visualstudio.com/items?itemName=antarrb.sidekiq-manager)
+[![GitHub Release](https://img.shields.io/github/v/release/antarr/vs-sidekiq)](https://github.com/antarr/vs-sidekiq/releases)
+[![License](https://img.shields.io/badge/license-Polyform%20Noncommercial-blue.svg)](LICENSE)
+
 > **⚠️ Status: Active Development**
 > This extension is in active development. APIs and features may change. Bug reports and contributions welcome!
 
