@@ -46,6 +46,32 @@ A comprehensive Visual Studio Code extension for monitoring and managing Sidekiq
 - Worker process information
 - Graceful worker termination
 
+## Screenshots
+
+### Sidebar Overview
+Monitor your Sidekiq queues, workers, and jobs directly from VS Code's sidebar.
+
+![Sidebar Overview](screenshots/01-sidebar-overview.png)
+
+### Real-time Dashboard
+View comprehensive metrics and statistics with live updates.
+
+![Dashboard](screenshots/02-dashboard.png)
+
+### Queue Management
+Inspect queue depths, latency, and manage queue operations.
+
+![Queue Details](screenshots/03-queue-details.png)
+
+### Job Details
+Examine job arguments, scheduling info, and execution details.
+
+![Job Details](screenshots/04-job-details.png)
+
+### Failed Job Monitoring
+View error messages, stack traces, and retry failed jobs with one click.
+
+![Failed Jobs](screenshots/05-failed-job.png)
 
 ## Installation
 
