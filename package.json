@@ -2,7 +2,7 @@
   "name": "sidekiq-manager",
   "displayName": "Sidekiq Manager",
   "description": "Comprehensive Sidekiq monitoring and management directly in VS Code",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "antarrb",
   "engines": {
     "vscode": "^1.74.0"
