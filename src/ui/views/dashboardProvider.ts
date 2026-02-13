@@ -1254,8 +1254,10 @@ export class DashboardProvider {
   private async updateDashboardData(server: ServerConfig): Promise<void> {
     if (!this.panel) return;
 
-    const stats = await this.sidekiqClient.getStats(server);
-    const queues = await this.sidekiqClient.getQueues(server);
+    const [stats, queues] = await Promise.all([
+      this.sidekiqClient.getStats(server),
+      this.sidekiqClient.getQueues(server)
+    ]);
 
     // Fetch historical stats (default to 7 days)
     const historicalStats: any[] = []; // await this.sidekiqClient.getHistoricalStats(server, 7);
@@ -1524,8 +1526,10 @@ export class DashboardProvider {
 
   private async handleExportData(server: ServerConfig): Promise<void> {
     try {
-      const stats = await this.sidekiqClient.getStats(server);
-      const queues = await this.sidekiqClient.getQueues(server);
+      const [stats, queues] = await Promise.all([
+        this.sidekiqClient.getStats(server),
+        this.sidekiqClient.getQueues(server)
+      ]);
 
       const exportData = {
         timestamp: new Date().toISOString(),
