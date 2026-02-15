@@ -1490,7 +1490,9 @@ export class DashboardProvider {
       clearInterval(this.autoRefreshTimer);
     }
 
-    const interval = 30000; // 30 seconds default
+    const config = vscode.workspace.getConfiguration('sidekiq');
+    const intervalSeconds = config.get<number>('refreshInterval', 30);
+    const interval = Math.max(intervalSeconds * 1000, 5000); // Minimum 5 seconds
 
     this.autoRefreshTimer = setInterval(async () => {
       if (this.panel) {
