@@ -1,12 +1,7 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from '../../core/connectionManager';
 import { ServerConfig } from '../../data/models/server';
-
-interface MetricData {
-  key: string;
-  value: number;
-  timestamp: string;
-}
+import { MetricsService } from '../../core/metricsService';
 
 interface JobMetrics {
   jobClass: string;
@@ -29,12 +24,14 @@ export class MetricsProvider {
   private panel: vscode.WebviewPanel | undefined;
   private connectionManager: ConnectionManager;
   private autoRefreshTimer: NodeJS.Timeout | undefined;
+  private metricsService: MetricsService;
 
   constructor(
     private context: vscode.ExtensionContext,
     connectionManager: ConnectionManager
   ) {
     this.connectionManager = connectionManager;
+    this.metricsService = new MetricsService();
   }
 
   async showMetrics(server: ServerConfig): Promise<void> {
@@ -605,23 +602,11 @@ export class MetricsProvider {
     try {
       const redis = await this.connectionManager.getConnection(server);
 
-      // Fetch all metric keys
-      const metricKeys = await redis.keys('metrics:*');
+      // Fetch metrics using optimized service
+      const metricsData = await this.metricsService.getMetrics(redis);
 
       // Parse and group metrics
       const groupedMetrics: GroupedMetrics = {};
-      const metricsData: MetricData[] = [];
-
-      for (const key of metricKeys) {
-        const value = await redis.get(key);
-        if (value) {
-          metricsData.push({
-            key,
-            value: parseInt(value, 10) || 0,
-            timestamp: this.extractTimestamp(key)
-          });
-        }
-      }
 
       // Group by job class and metric type
       for (const metric of metricsData) {
@@ -750,12 +735,6 @@ export class MetricsProvider {
     const jobClass = parts.slice(1, -1).join('.');
 
     return { namespace, jobClass, metricType };
-  }
-
-  private extractTimestamp(key: string): string {
-    // Extract timestamp from key: metrics:path:timestamp
-    const parts = key.split(':');
-    return parts[parts.length - 1] || '';
   }
 
   private startAutoRefresh(server: ServerConfig): void {
