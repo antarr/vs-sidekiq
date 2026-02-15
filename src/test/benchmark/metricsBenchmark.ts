@@ -28,8 +28,8 @@ class MockRedis {
 
   async get(key: string): Promise<string | null> {
     this.commands.get++;
-    // Simulate network latency (0.1ms which is very optimistic for local, 1ms+ for remote)
-    await new Promise(resolve => setTimeout(resolve, 0.1));
+    // Simulate small network latency (very optimistic for local, 1ms+ for remote)
+    await new Promise(resolve => setTimeout(resolve, 1));
     return this.data.get(key) || null;
   }
 
