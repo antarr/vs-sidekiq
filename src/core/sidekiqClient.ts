@@ -184,7 +184,7 @@ export class SidekiqClient {
     const workerResults = await pipeline.exec();
 
     // Prepare for second pipeline (getting jobs for busy workers)
-    const workersData: any[] = [];
+    const workersData: (Record<string, string> | null)[] = [];
     const busyWorkerIndices: number[] = [];
 
     if (workerResults) {
@@ -198,7 +198,7 @@ export class SidekiqClient {
           continue;
         }
 
-        const processData = res as any;
+        const processData = res as Record<string, string>;
         if (!processData || !processData.info) {
           console.warn(`No info found for process ${processId}`);
           workersData.push(null);

@@ -95,7 +95,7 @@ class MockRedis {
 const mockRedis = new MockRedis(100); // 100 workers
 const mockConnectionManager = {
   getConnection: async (_server: ServerConfig) => mockRedis
-} as any;
+} as unknown as ConnectionManager;
 
 const client = new SidekiqClient(mockConnectionManager);
 
@@ -103,16 +103,12 @@ async function runBenchmark() {
     console.log('Starting benchmark with 100 workers...');
     const start = performance.now();
 
-    // @ts-ignore
     const workers = await client.getWorkers({} as ServerConfig);
 
     const end = performance.now();
     console.log(`Time: ${(end - start).toFixed(2)}ms`);
-    const totalCommands = Object.values(mockRedis.commands).reduce((a, b) => a + b, 0);
-    const totalRoundTrips = mockRedis.commands.smembers + mockRedis.commands.exec;
     console.log('Redis Commands:', mockRedis.commands);
-    console.log(`Total Commands: ${totalCommands}`);
-    console.log(`Total Round Trips: ${totalRoundTrips}`);
+    console.log(`Total Round Trips: ${Object.values(mockRedis.commands).reduce((a, b) => a + b, 0)}`);
     console.log(`Workers found: ${workers.length}`);
 }
 
