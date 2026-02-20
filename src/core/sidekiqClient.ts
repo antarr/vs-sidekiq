@@ -176,40 +176,94 @@ export class SidekiqClient {
       return [];
     }
 
-    const workers: Worker[] = [];
-
+    // Use pipeline to batch all hgetall calls
+    const pipeline = redis.pipeline();
     for (const processId of processIds) {
-      try {
-        // Get worker data - Sidekiq stores workers as hashes
-        const processData = await redis.hgetall(processId);
+      pipeline.hgetall(processId);
+    }
+    const workerResults = await pipeline.exec();
 
-        if (!processData || !processData.info) {
-          console.warn(`No info found for process ${processId}`);
+    // Prepare for second pipeline (getting jobs for busy workers)
+    const workersData: any[] = [];
+    const busyWorkerIndices: number[] = [];
+
+    if (workerResults) {
+      for (let i = 0; i < workerResults.length; i++) {
+        const [err, res] = workerResults[i];
+        const processId = processIds[i];
+
+        if (err) {
+          console.error(`Failed to get info for process ${processId}`, err);
+          workersData.push(null);
           continue;
         }
 
-        const info = JSON.parse(processData.info);
-        const busy = parseInt(processData.busy || '0', 10);
+        const processData = res as any;
+        if (!processData || !processData.info) {
+          console.warn(`No info found for process ${processId}`);
+          workersData.push(null);
+          continue;
+        }
 
-        // Get current job if worker is busy
-        let currentJob: Worker['job'] = undefined;
+        workersData.push(processData);
+        const busy = parseInt(processData.busy || '0', 10);
         if (busy > 0) {
-          // Try to get the current job from the worker data
-          const workKey = `${processId}:work`;
-          const workData = await redis.get(workKey);
-          if (workData) {
-            try {
-              const jobData = JSON.parse(workData);
-              currentJob = {
-                id: jobData.payload?.jid || '',
-                queue: jobData.queue || '',
-                class: jobData.payload?.class || '',
-                args: jobData.payload?.args || [],
-                createdAt: jobData.payload?.created_at ? new Date(jobData.payload.created_at * 1000) : new Date()
-              };
-            } catch (error) {
-              console.error('Failed to parse job data:', error);
-            }
+          busyWorkerIndices.push(i);
+        }
+      }
+    }
+
+    // Pipeline 2: Get job info for busy workers
+    const jobResultsMap = new Map<string, string>();
+    if (busyWorkerIndices.length > 0) {
+      const jobPipeline = redis.pipeline();
+      for (const index of busyWorkerIndices) {
+        const processId = processIds[index];
+        jobPipeline.get(`${processId}:work`);
+      }
+
+      const jobResults = await jobPipeline.exec();
+
+      if (jobResults) {
+        for (let i = 0; i < jobResults.length; i++) {
+          const [err, res] = jobResults[i];
+          const index = busyWorkerIndices[i];
+          const processId = processIds[index];
+
+          if (!err && res) {
+            jobResultsMap.set(processId, res as string);
+          }
+        }
+      }
+    }
+
+    const workers: Worker[] = [];
+
+    // Process results
+    for (let i = 0; i < workersData.length; i++) {
+      const processData = workersData[i];
+      if (!processData) continue;
+
+      const processId = processIds[i];
+
+      try {
+        const info = JSON.parse(processData.info);
+
+        let currentJob: Worker['job'] = undefined;
+        const workData = jobResultsMap.get(processId);
+
+        if (workData) {
+          try {
+            const jobData = JSON.parse(workData);
+            currentJob = {
+              id: jobData.payload?.jid || '',
+              queue: jobData.queue || '',
+              class: jobData.payload?.class || '',
+              args: jobData.payload?.args || [],
+              createdAt: jobData.payload?.created_at ? new Date(jobData.payload.created_at * 1000) : new Date()
+            };
+          } catch (error) {
+            console.error('Failed to parse job data:', error);
           }
         }
 
