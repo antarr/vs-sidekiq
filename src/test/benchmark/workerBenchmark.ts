@@ -108,8 +108,11 @@ async function runBenchmark() {
 
     const end = performance.now();
     console.log(`Time: ${(end - start).toFixed(2)}ms`);
+    const totalCommands = Object.values(mockRedis.commands).reduce((a, b) => a + b, 0);
+    const totalRoundTrips = mockRedis.commands.smembers + mockRedis.commands.exec;
     console.log('Redis Commands:', mockRedis.commands);
-    console.log(`Total Round Trips: ${Object.values(mockRedis.commands).reduce((a, b) => a + b, 0)}`);
+    console.log(`Total Commands: ${totalCommands}`);
+    console.log(`Total Round Trips: ${totalRoundTrips}`);
     console.log(`Workers found: ${workers.length}`);
 }
 
