@@ -51,7 +51,7 @@ export class DashboardProvider {
     this.panel.onDidDispose(() => {
       this.panel = undefined;
       if (this.autoRefreshTimer) {
-        clearInterval(this.autoRefreshTimer);
+        clearTimeout(this.autoRefreshTimer);
         this.autoRefreshTimer = undefined;
       }
       // Clear historical data on close
@@ -1487,23 +1487,33 @@ export class DashboardProvider {
   private startAutoRefresh(server: ServerConfig): void {
     // Clear existing timer if any
     if (this.autoRefreshTimer) {
-      clearInterval(this.autoRefreshTimer);
+      clearTimeout(this.autoRefreshTimer);
     }
 
     const config = vscode.workspace.getConfiguration('sidekiq');
     const intervalSeconds = config.get<number>('refreshInterval', 30);
     const interval = Math.max(intervalSeconds * 1000, 5000); // Minimum 5 seconds
 
-    this.autoRefreshTimer = setInterval(async () => {
-      if (this.panel) {
-        await this.updateDashboardData(server);
-      } else {
-        if (this.autoRefreshTimer) {
-          clearInterval(this.autoRefreshTimer);
-          this.autoRefreshTimer = undefined;
-        }
+    const refreshLoop = async () => {
+      if (!this.panel) {
+        this.autoRefreshTimer = undefined;
+        return;
       }
-    }, interval);
+
+      try {
+        await this.updateDashboardData(server);
+      } catch (error) {
+        console.error('Error updating dashboard data:', error);
+      }
+
+      if (this.panel) {
+        this.autoRefreshTimer = setTimeout(refreshLoop, interval);
+      } else {
+        this.autoRefreshTimer = undefined;
+      }
+    };
+
+    this.autoRefreshTimer = setTimeout(refreshLoop, interval);
   }
 
   private async handleRetryJob(server: ServerConfig, job: any): Promise<void> {
