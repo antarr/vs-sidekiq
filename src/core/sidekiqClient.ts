@@ -231,6 +231,67 @@ export class SidekiqClient {
     return workers;
   }
 
+  async getWorker(server: ServerConfig, workerId: string): Promise<Worker | null> {
+    const redis = await this.connectionManager.getConnection(server);
+
+    const pipeline = redis.pipeline();
+    pipeline.hgetall(workerId);
+    pipeline.get(`${workerId}:work`);
+
+    const results = await pipeline.exec();
+    if (!results || results.length < 2) {
+      return null;
+    }
+
+    const [processErr, processData] = results[0] as [Error | null, any];
+    const [workErr, workData] = results[1] as [Error | null, string | null];
+
+    if (processErr || !processData || !processData.info) {
+      console.warn(`No info found for worker ${workerId}`);
+      return null;
+    }
+
+    try {
+      const info = JSON.parse(processData.info);
+      const busy = parseInt(processData.busy || '0', 10);
+
+      let currentJob: Worker['job'] = undefined;
+      if (workData) {
+        try {
+          const jobData = JSON.parse(workData);
+          currentJob = {
+            id: jobData.payload?.jid || '',
+            queue: jobData.queue || '',
+            class: jobData.payload?.class || '',
+            args: jobData.payload?.args || [],
+            createdAt: jobData.payload?.created_at ? new Date(jobData.payload.created_at * 1000) : new Date()
+          };
+        } catch (error) {
+          console.error('Failed to parse job data:', error);
+        }
+      }
+
+      return {
+        id: workerId,
+        hostname: info.hostname || workerId.split(':')[0],
+        pid: info.pid || parseInt(workerId.split(':')[1], 10),
+        tag: info.tag,
+        started_at: info.started_at ? new Date(info.started_at * 1000) : new Date(),
+        job: currentJob,
+        queues: info.queues || [],
+        // Process details
+        concurrency: info.concurrency,
+        busy: busy,
+        beat: processData.beat ? parseInt(processData.beat, 10) : undefined,
+        quiet: processData.quiet === 'true',
+        rss: processData.rss ? parseInt(processData.rss, 10) : undefined
+      };
+    } catch (error) {
+      console.error(`Failed to parse worker ${workerId}:`, error);
+      return null;
+    }
+  }
+
   async getScheduledJobs(server: ServerConfig, start = 0, stop = 99): Promise<Job[]> {
     const redis = await this.connectionManager.getConnection(server);
     const jobs = await redis.zrange('schedule', start, stop, 'WITHSCORES');

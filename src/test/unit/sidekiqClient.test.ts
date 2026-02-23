@@ -122,4 +122,69 @@ describe('SidekiqClient', () => {
             assert.strictEqual(queues[1].latency, 0); // No job returned
         });
     });
+
+    describe('getWorker', () => {
+        it('should fetch single worker details using pipeline', async () => {
+            let pipelineCommands: Array<{ cmd: string, args: any[] }> = [];
+            const mockWorkerId = 'worker:123';
+
+            const mockPipeline = {
+                hgetall: (key: string) => {
+                    pipelineCommands.push({ cmd: 'hgetall', args: [key] });
+                    return mockPipeline;
+                },
+                get: (key: string) => {
+                    pipelineCommands.push({ cmd: 'get', args: [key] });
+                    return mockPipeline;
+                },
+                exec: () => {
+                    return Promise.resolve([
+                        [null, { info: JSON.stringify({ hostname: 'h1', pid: 1, queues: ['q1'], started_at: 1000 }), busy: '1' }],
+                        [null, JSON.stringify({ payload: { jid: 'j1', class: 'C1', created_at: 1050 } })]
+                    ]);
+                }
+            };
+
+            const mockRedis = {
+                pipeline: () => mockPipeline
+            };
+
+            const mockConnectionManager = {
+                getConnection: () => Promise.resolve(mockRedis)
+            } as unknown as ConnectionManager;
+
+            const client = new SidekiqClient(mockConnectionManager);
+            const worker = await client.getWorker({} as ServerConfig, mockWorkerId);
+
+            assert.ok(worker);
+            assert.strictEqual(worker?.id, mockWorkerId);
+            assert.strictEqual(pipelineCommands.length, 2);
+            assert.strictEqual(pipelineCommands[0].cmd, 'hgetall');
+            assert.strictEqual(pipelineCommands[0].args[0], mockWorkerId);
+            assert.strictEqual(pipelineCommands[1].cmd, 'get');
+            assert.strictEqual(pipelineCommands[1].args[0], `${mockWorkerId}:work`);
+
+            assert.strictEqual(worker?.hostname, 'h1');
+            assert.strictEqual(worker?.job?.id, 'j1');
+        });
+
+        it('should return null if worker info is missing', async () => {
+            const mockPipeline = {
+                hgetall: () => mockPipeline,
+                get: () => mockPipeline,
+                exec: () => Promise.resolve([
+                    [null, {}], // Empty hgetall result
+                    [null, null]
+                ])
+            };
+            const mockRedis = { pipeline: () => mockPipeline };
+            const mockConnectionManager = {
+                getConnection: () => Promise.resolve(mockRedis)
+            } as any;
+
+            const client = new SidekiqClient(mockConnectionManager);
+            const worker = await client.getWorker({} as ServerConfig, 'missing');
+            assert.strictEqual(worker, null);
+        });
+    });
 });
