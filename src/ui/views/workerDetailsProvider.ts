@@ -118,8 +118,7 @@ export class WorkerDetailsProvider {
 
   private async getWebviewContent(server: ServerConfig, initialWorker: Worker): Promise<string> {
     // Refresh worker data to get latest stats
-    const workers = await this.sidekiqClient.getWorkers(server);
-    const worker = workers.find(w => w.id === initialWorker.id) || initialWorker;
+    const worker = await this.sidekiqClient.getWorker(server, initialWorker.id) || initialWorker;
 
     const nonce = this.getNonce();
     const shortHostname = this.getShortHostname(worker.hostname);
