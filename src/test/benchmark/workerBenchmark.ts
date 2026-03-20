@@ -1,4 +1,5 @@
 import { SidekiqClient } from '../../core/sidekiqClient';
+import { ConnectionManager } from '../../core/connectionManager';
 import { ServerConfig } from '../../data/models/server';
 
 // Mock Redis
@@ -67,8 +68,13 @@ class MockRedis {
 
   pipeline() {
     this.commands.pipeline++;
+    const self = this;
     const commands: any[] = [];
     const pipelineObj = {
+      smembers: (key: string) => {
+        commands.push(['smembers', key]);
+        return pipelineObj;
+      },
       hgetall: (key: string) => {
         commands.push(['hgetall', key]);
         return pipelineObj;
@@ -78,11 +84,15 @@ class MockRedis {
         return pipelineObj;
       },
       exec: async () => {
-        this.commands.exec++;
+        self.commands.exec++;
         await new Promise(resolve => setTimeout(resolve, 1)); // One round trip for all
         return commands.map(([cmd, key]) => {
-            if (cmd === 'hgetall') return [null, this.workerData.get(key) || {}];
-            if (cmd === 'get') return [null, this.workerJobs.get(key) || null];
+            if (cmd === 'smembers') {
+              if (key === 'processes') return [null, self.workerIds];
+              return [null, []];
+            }
+            if (cmd === 'hgetall') return [null, self.workerData.get(key) || {}];
+            if (cmd === 'get') return [null, self.workerJobs.get(key) || null];
             return [null, null];
         });
       }

@@ -410,19 +410,8 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
         );
 
         if (confirm === 'Yes') {
-          let successCount = 0;
-          let failCount = 0;
-
-          for (const treeItem of items) {
-            const job = treeItem.job || treeItem;
-            try {
-              await client.retryJob(activeServer, job);
-              successCount++;
-            } catch (error) {
-              failCount++;
-              console.error(`Failed to retry job ${job.id}:`, error);
-            }
-          }
+          const jobs = items.map((treeItem: any) => treeItem.job || treeItem);
+          const { successCount, failCount } = await client.retryJobs(activeServer, jobs);
 
           if (failCount === 0) {
             vscode.window.showInformationMessage(`Successfully retried ${successCount} job(s)`);
@@ -478,21 +467,11 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
       );
 
       if (confirm === 'Yes') {
-        let successCount = 0;
-        let failCount = 0;
-
-        for (const treeItem of items) {
-          const job = treeItem.job || treeItem;
-          const category = treeItem.category || 'dead';
-
-          try {
-            await client.deleteJob(activeServer, job, category as any);
-            successCount++;
-          } catch (error) {
-            failCount++;
-            console.error(`Failed to delete job ${job.id}:`, error);
-          }
-        }
+        const jobsWithCategory = items.map((treeItem: any) => ({
+          job: treeItem.job || treeItem,
+          from: (treeItem.category || 'dead') as 'queue' | 'retry' | 'dead' | 'scheduled'
+        }));
+        const { successCount, failCount } = await client.deleteJobs(activeServer, jobsWithCategory);
 
         if (items.length === 1) {
           if (successCount === 1) {
@@ -538,21 +517,9 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
       );
 
       if (confirm === 'Yes') {
-        let successCount = 0;
-        let failCount = 0;
-
         const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
-
-        for (const treeItem of selectedItems) {
-          const job = treeItem.job || treeItem;
-          try {
-            await client.retryJob(activeServer, job);
-            successCount++;
-          } catch (error) {
-            failCount++;
-            console.error(`Failed to retry job ${job.id}:`, error);
-          }
-        }
+        const jobs = selectedItems.map((treeItem: any) => treeItem.job || treeItem);
+        const { successCount, failCount } = await client.retryJobs(activeServer, jobs);
 
         if (failCount === 0) {
           vscode.window.showInformationMessage(`Successfully retried ${successCount} job(s)`);
@@ -590,22 +557,12 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
       );
 
       if (confirm === 'Yes') {
-        let successCount = 0;
-        let failCount = 0;
-
         const client = new (await import('../core/sidekiqClient')).SidekiqClient(ctx.connectionManager);
-
-        for (const treeItem of selectedItems) {
-          const job = treeItem.job || treeItem;
-          const category = treeItem.category || 'dead';
-          try {
-            await client.deleteJob(activeServer, job, category as any);
-            successCount++;
-          } catch (error) {
-            failCount++;
-            console.error(`Failed to delete job ${job.id}:`, error);
-          }
-        }
+        const jobsWithCategory = selectedItems.map((treeItem: any) => ({
+          job: treeItem.job || treeItem,
+          from: (treeItem.category || 'dead') as 'queue' | 'retry' | 'dead' | 'scheduled'
+        }));
+        const { successCount, failCount } = await client.deleteJobs(activeServer, jobsWithCategory);
 
         if (failCount === 0) {
           vscode.window.showInformationMessage(`Successfully deleted ${successCount} job(s)`);

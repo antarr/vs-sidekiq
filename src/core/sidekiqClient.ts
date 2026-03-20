@@ -23,6 +23,28 @@ until cursor == "0"
 return 0
 `;
 
+const REMOVE_JOB_FROM_QUEUE_SCRIPT = `
+local queue = KEYS[1]
+local jid = ARGV[1]
+local batch_size = 1000
+local start = 0
+local len = redis.call('LLEN', queue)
+while start < len do
+  local end_idx = start + batch_size - 1
+  local jobs = redis.call('LRANGE', queue, start, end_idx)
+  if #jobs == 0 then break end
+  for i, job in ipairs(jobs) do
+    local success, parsed = pcall(cjson.decode, job)
+    if success and parsed.jid == jid then
+      redis.call('LREM', queue, 1, job)
+      return 1
+    end
+  end
+  start = start + batch_size
+end
+return 0
+`;
+
 export class SidekiqClient {
   constructor(private connectionManager: ConnectionManager) {}
 
@@ -73,11 +95,13 @@ export class SidekiqClient {
     }
 
     const pipeline = redis.pipeline();
-    // Use pipeline to batch all size and latency checks into a single network round-trip.
-    // This solves the N+1 query issue where fetching details for N queues would take 2*N round-trips.
+    // Use pipeline to batch all size, latency, and pause checks into a single network round-trip.
+    // This solves the N+1 query issue where fetching details for N queues would take 3*N round-trips.
     for (const name of queueNames) {
       pipeline.llen(`queue:${name}`);
       pipeline.lindex(`queue:${name}`, -1);
+      // Sidekiq Pro/Enterprise stores pause status per queue
+      pipeline.exists(`queue:${name}:paused`);
     }
 
     const results = await pipeline.exec();
@@ -87,9 +111,10 @@ export class SidekiqClient {
       for (let i = 0; i < queueNames.length; i++) {
         const name = queueNames[i];
 
-        // Results are interleaved: llen, lindex, llen, lindex...
-        const [sizeErr, sizeRes] = results[i * 2];
-        const [jobErr, jobRes] = results[i * 2 + 1];
+        // Results are interleaved: llen, lindex, exists, llen, lindex, exists...
+        const [sizeErr, sizeRes] = results[i * 3];
+        const [jobErr, jobRes] = results[i * 3 + 1];
+        const [pausedErr, pausedRes] = results[i * 3 + 2];
 
         if (sizeErr) {
           throw sizeErr;
@@ -116,7 +141,7 @@ export class SidekiqClient {
           name,
           size,
           latency,
-          paused: false // TODO: Check if queue is paused
+          paused: !pausedErr && pausedRes === 1
         });
       }
     }
@@ -155,20 +180,27 @@ export class SidekiqClient {
   async getWorkers(server: ServerConfig): Promise<Worker[]> {
     const redis = await this.connectionManager.getConnection(server);
 
-    // Sidekiq 6+ uses 'processes' set to store worker processes
-    let processIds = await redis.smembers('processes');
-    console.log(`Found ${processIds.length} workers in 'processes' set`);
+    // Fetch all possible process set keys in a single round-trip
+    // Sidekiq 6+ uses 'processes', older versions use 'workers', namespaced uses 'sidekiq:processes'
+    const setsPipeline = redis.pipeline();
+    setsPipeline.smembers('processes');
+    setsPipeline.smembers('workers');
+    setsPipeline.smembers('sidekiq:processes');
+    const setsResults = await setsPipeline.exec();
 
-    // Fallback to older 'workers' set for older Sidekiq versions
-    if (processIds.length === 0) {
-      processIds = await redis.smembers('workers');
-      console.log(`Found ${processIds.length} workers in 'workers' set (legacy)`);
-    }
-
-    // Try with namespace prefix
-    if (processIds.length === 0) {
-      processIds = await redis.smembers('sidekiq:processes');
-      console.log(`Found ${processIds.length} workers in 'sidekiq:processes' set`);
+    // Use the first non-empty result (priority: processes > workers > sidekiq:processes)
+    let processIds: string[] = [];
+    const setNames = ['processes', 'workers', 'sidekiq:processes'];
+    if (setsResults) {
+      for (let i = 0; i < setsResults.length; i++) {
+        const [err, res] = setsResults[i];
+        const members = (!err && res) ? res as string[] : [];
+        if (members.length > 0) {
+          processIds = members;
+          console.log(`Found ${processIds.length} workers in '${setNames[i]}' set`);
+          break;
+        }
+      }
     }
 
     if (processIds.length === 0) {
@@ -298,7 +330,7 @@ export class SidekiqClient {
     }
 
     const [processErr, processData] = results[0] as [Error | null, any];
-    const [workErr, workData] = results[1] as [Error | null, string | null];
+    const [, workData] = results[1] as [Error | null, string | null];
 
     if (processErr || !processData || !processData.info) {
       console.warn(`No info found for worker ${workerId}`);
@@ -434,7 +466,7 @@ export class SidekiqClient {
 
   async retryJob(server: ServerConfig, job: Job): Promise<void> {
     const redis = await this.connectionManager.getConnection(server);
-    
+
     const jobData = {
       jid: job.id,
       class: job.class,
@@ -444,13 +476,73 @@ export class SidekiqClient {
       retry: true,
       queue: job.queue
     };
-    
-    // First, remove the job from retry or dead set using Lua script for atomicity and performance
-    await redis.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'retry', job.id);
-    await redis.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'dead', job.id);
-    
-    // Now add to the queue
-    await redis.lpush(`queue:${job.queue}`, JSON.stringify(jobData));
+
+    // Pipeline all three operations into a single round-trip
+    const pipeline = redis.pipeline();
+    pipeline.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'retry', job.id);
+    pipeline.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'dead', job.id);
+    pipeline.lpush(`queue:${job.queue}`, JSON.stringify(jobData));
+    const results = await pipeline.exec();
+
+    if (results) {
+      for (const [err] of results) {
+        if (err) {
+          throw err;
+        }
+      }
+    }
+  }
+
+  async retryJobs(server: ServerConfig, jobs: Job[]): Promise<{ successCount: number; failCount: number }> {
+    if (jobs.length === 0) {
+      return { successCount: 0, failCount: 0 };
+    }
+    if (jobs.length === 1) {
+      try {
+        await this.retryJob(server, jobs[0]);
+        return { successCount: 1, failCount: 0 };
+      } catch {
+        return { successCount: 0, failCount: 1 };
+      }
+    }
+
+    const redis = await this.connectionManager.getConnection(server);
+    const now = Math.floor(Date.now() / 1000);
+
+    // Pipeline all retry operations for all jobs in a single round-trip
+    const pipeline = redis.pipeline();
+    for (const job of jobs) {
+      const jobData = {
+        jid: job.id,
+        class: job.class,
+        args: job.args,
+        created_at: Math.floor(job.createdAt.getTime() / 1000),
+        enqueued_at: now,
+        retry: true,
+        queue: job.queue
+      };
+      pipeline.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'retry', job.id);
+      pipeline.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'dead', job.id);
+      pipeline.lpush(`queue:${job.queue}`, JSON.stringify(jobData));
+    }
+
+    const results = await pipeline.exec();
+    if (!results) {
+      return { successCount: 0, failCount: jobs.length };
+    }
+
+    let failCount = 0;
+    // Each job has 3 commands (retry eval, dead eval, lpush); check all for errors
+    for (let i = 0; i < jobs.length; i++) {
+      const baseIndex = i * 3;
+      const hasError = results[baseIndex]?.[0] || results[baseIndex + 1]?.[0] || results[baseIndex + 2]?.[0];
+      if (hasError) {
+        failCount++;
+        console.error(`Failed to retry job ${jobs[i].id}:`, hasError);
+      }
+    }
+
+    return { successCount: jobs.length - failCount, failCount };
   }
 
   async deleteJob(server: ServerConfig, job: Job, from: 'queue' | 'retry' | 'dead' | 'scheduled'): Promise<void> {
@@ -459,42 +551,7 @@ export class SidekiqClient {
     // We need to find and delete the job by matching its ID
     switch (from) {
       case 'queue':
-        // Use Lua script to find and delete the job server-side
-        // This avoids transferring the entire queue content over the network
-        // We use chunked iteration to avoid loading the entire queue into memory at once
-        // This optimization drastically reduces client-side memory usage and network bandwidth
-        await redis.eval(
-          `
-            local queue = KEYS[1]
-            local jid = ARGV[1]
-            local batch_size = 1000
-            local start = 0
-            local len = redis.call('LLEN', queue)
-
-            while start < len do
-              local end_idx = start + batch_size - 1
-              local jobs = redis.call('LRANGE', queue, start, end_idx)
-
-              if #jobs == 0 then
-                break
-              end
-
-              for i, job in ipairs(jobs) do
-                local success, parsed = pcall(cjson.decode, job)
-                if success and parsed.jid == jid then
-                  redis.call('LREM', queue, 1, job)
-                  return 1
-                end
-              end
-
-              start = start + batch_size
-            end
-            return 0
-          `,
-          1,
-          `queue:${job.queue}`,
-          job.id
-        );
+        await redis.eval(REMOVE_JOB_FROM_QUEUE_SCRIPT, 1, `queue:${job.queue}`, job.id);
         break;
         
       case 'retry':
@@ -509,6 +566,75 @@ export class SidekiqClient {
         await redis.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'schedule', job.id);
         break;
     }
+  }
+
+  async deleteJobs(server: ServerConfig, jobs: { job: Job; from: 'queue' | 'retry' | 'dead' | 'scheduled' }[]): Promise<{ successCount: number; failCount: number }> {
+    if (jobs.length === 0) {
+      return { successCount: 0, failCount: 0 };
+    }
+    if (jobs.length === 1) {
+      try {
+        await this.deleteJob(server, jobs[0].job, jobs[0].from);
+        return { successCount: 1, failCount: 0 };
+      } catch {
+        return { successCount: 0, failCount: 1 };
+      }
+    }
+
+    const redis = await this.connectionManager.getConnection(server);
+
+    // Group jobs by type for efficient pipelining
+    // Queue deletes use a different Lua script and can't be easily pipelined with sorted set deletes,
+    // so we handle them separately
+    const queueJobs = jobs.filter(j => j.from === 'queue');
+    const sortedSetJobs = jobs.filter(j => j.from !== 'queue');
+
+    let failCount = 0;
+
+    // Pipeline all sorted set deletions (retry/dead/scheduled) in one round-trip
+    if (sortedSetJobs.length > 0) {
+      const pipeline = redis.pipeline();
+      const keyMap: Record<string, string> = { retry: 'retry', dead: 'dead', scheduled: 'schedule' };
+
+      for (const { job, from } of sortedSetJobs) {
+        pipeline.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, keyMap[from], job.id);
+      }
+
+      const results = await pipeline.exec();
+      if (!results) {
+        failCount += sortedSetJobs.length;
+      } else {
+        for (let i = 0; i < results.length; i++) {
+          if (results[i][0]) {
+            failCount++;
+            console.error(`Failed to delete job ${sortedSetJobs[i].job.id}:`, results[i][0]);
+          }
+        }
+      }
+    }
+
+    // Queue jobs use a heavier Lua script; pipeline them as well
+    if (queueJobs.length > 0) {
+      const pipeline = redis.pipeline();
+
+      for (const { job } of queueJobs) {
+        pipeline.eval(REMOVE_JOB_FROM_QUEUE_SCRIPT, 1, `queue:${job.queue}`, job.id);
+      }
+
+      const results = await pipeline.exec();
+      if (!results) {
+        failCount += queueJobs.length;
+      } else {
+        for (let i = 0; i < results.length; i++) {
+          if (results[i][0]) {
+            failCount++;
+            console.error(`Failed to delete job ${queueJobs[i].job.id}:`, results[i][0]);
+          }
+        }
+      }
+    }
+
+    return { successCount: jobs.length - failCount, failCount };
   }
 
   async clearQueue(server: ServerConfig, queueName: string): Promise<void> {

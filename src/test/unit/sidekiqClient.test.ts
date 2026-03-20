@@ -79,15 +79,21 @@ describe('SidekiqClient', () => {
                     pipelineCommands.push({ cmd: 'lindex', args: [key, index] });
                     return mockPipeline;
                 },
+                exists: (key: string) => {
+                    pipelineCommands.push({ cmd: 'exists', args: [key] });
+                    return mockPipeline;
+                },
                 exec: () => {
                     pipelineExecCalled = true;
                     // Return mock results: [err, result]
-                    // We expect 2 queues * 2 commands = 4 results
+                    // We expect 2 queues * 3 commands = 6 results
                     return Promise.resolve([
                         [null, 10], // size q1
                         [null, JSON.stringify({ enqueued_at: Date.now() / 1000 - 100 })], // job q1 (100s lag)
-                        [null, 5], // size q2
-                        [null, null] // job q2 (empty or error)
+                        [null, 0],  // paused q1 (not paused)
+                        [null, 5],  // size q2
+                        [null, null], // job q2 (empty or error)
+                        [null, 0]   // paused q2 (not paused)
                     ]);
                 }
             };
@@ -107,10 +113,11 @@ describe('SidekiqClient', () => {
             const queues = await client.getQueues(server);
 
             assert.strictEqual(pipelineExecCalled, true);
-            assert.strictEqual(pipelineCommands.length, 4);
+            assert.strictEqual(pipelineCommands.length, 6);
             assert.strictEqual(pipelineCommands[0].cmd, 'llen');
             assert.strictEqual(pipelineCommands[0].args[0], 'queue:q1');
             assert.strictEqual(pipelineCommands[1].cmd, 'lindex');
+            assert.strictEqual(pipelineCommands[2].cmd, 'exists');
 
             assert.strictEqual(queues.length, 2);
             assert.strictEqual(queues[0].name, 'q1');
