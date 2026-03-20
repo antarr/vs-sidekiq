@@ -73,11 +73,13 @@ export class SidekiqClient {
     }
 
     const pipeline = redis.pipeline();
-    // Use pipeline to batch all size and latency checks into a single network round-trip.
-    // This solves the N+1 query issue where fetching details for N queues would take 2*N round-trips.
+    // Use pipeline to batch all size, latency, and pause checks into a single network round-trip.
+    // This solves the N+1 query issue where fetching details for N queues would take 3*N round-trips.
     for (const name of queueNames) {
       pipeline.llen(`queue:${name}`);
       pipeline.lindex(`queue:${name}`, -1);
+      // Sidekiq Pro/Enterprise stores pause status per queue
+      pipeline.exists(`queue:${name}:paused`);
     }
 
     const results = await pipeline.exec();
@@ -87,9 +89,10 @@ export class SidekiqClient {
       for (let i = 0; i < queueNames.length; i++) {
         const name = queueNames[i];
 
-        // Results are interleaved: llen, lindex, llen, lindex...
-        const [sizeErr, sizeRes] = results[i * 2];
-        const [jobErr, jobRes] = results[i * 2 + 1];
+        // Results are interleaved: llen, lindex, exists, llen, lindex, exists...
+        const [sizeErr, sizeRes] = results[i * 3];
+        const [jobErr, jobRes] = results[i * 3 + 1];
+        const [pausedErr, pausedRes] = results[i * 3 + 2];
 
         if (sizeErr) {
           throw sizeErr;
@@ -116,7 +119,7 @@ export class SidekiqClient {
           name,
           size,
           latency,
-          paused: false // TODO: Check if queue is paused
+          paused: !pausedErr && pausedRes === 1
         });
       }
     }
@@ -155,20 +158,27 @@ export class SidekiqClient {
   async getWorkers(server: ServerConfig): Promise<Worker[]> {
     const redis = await this.connectionManager.getConnection(server);
 
-    // Sidekiq 6+ uses 'processes' set to store worker processes
-    let processIds = await redis.smembers('processes');
-    console.log(`Found ${processIds.length} workers in 'processes' set`);
+    // Fetch all possible process set keys in a single round-trip
+    // Sidekiq 6+ uses 'processes', older versions use 'workers', namespaced uses 'sidekiq:processes'
+    const setsPipeline = redis.pipeline();
+    setsPipeline.smembers('processes');
+    setsPipeline.smembers('workers');
+    setsPipeline.smembers('sidekiq:processes');
+    const setsResults = await setsPipeline.exec();
 
-    // Fallback to older 'workers' set for older Sidekiq versions
-    if (processIds.length === 0) {
-      processIds = await redis.smembers('workers');
-      console.log(`Found ${processIds.length} workers in 'workers' set (legacy)`);
-    }
-
-    // Try with namespace prefix
-    if (processIds.length === 0) {
-      processIds = await redis.smembers('sidekiq:processes');
-      console.log(`Found ${processIds.length} workers in 'sidekiq:processes' set`);
+    // Use the first non-empty result (priority: processes > workers > sidekiq:processes)
+    let processIds: string[] = [];
+    const setNames = ['processes', 'workers', 'sidekiq:processes'];
+    if (setsResults) {
+      for (let i = 0; i < setsResults.length; i++) {
+        const [err, res] = setsResults[i];
+        const members = (!err && res) ? res as string[] : [];
+        if (members.length > 0) {
+          processIds = members;
+          console.log(`Found ${processIds.length} workers in '${setNames[i]}' set`);
+          break;
+        }
+      }
     }
 
     if (processIds.length === 0) {
