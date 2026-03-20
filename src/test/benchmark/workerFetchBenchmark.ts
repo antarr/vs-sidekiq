@@ -67,8 +67,13 @@ class MockRedis {
 
   pipeline() {
     this.commands.pipeline++;
+    const self = this;
     const commands: any[] = [];
     const p = {
+      smembers: (key: string) => {
+        commands.push({ name: 'smembers', key });
+        return p;
+      },
       hgetall: (key: string) => {
         commands.push({ name: 'hgetall', key });
         return p;
@@ -78,14 +83,17 @@ class MockRedis {
         return p;
       },
       exec: async () => {
-        this.commands.exec++;
+        self.commands.exec++;
         // 1ms network latency for the whole batch
         await new Promise(resolve => setTimeout(resolve, 1));
         return Promise.all(commands.map(async cmd => {
-          if (cmd.name === 'hgetall') {
-            return [null, this.data.get(cmd.key) || {}];
+          if (cmd.name === 'smembers') {
+            if (cmd.key === 'processes') return [null, self.workers];
+            return [null, []];
+          } else if (cmd.name === 'hgetall') {
+            return [null, self.data.get(cmd.key) || {}];
           } else {
-            return [null, this.data.get(cmd.key) || null];
+            return [null, self.data.get(cmd.key) || null];
           }
         }));
       }

@@ -23,6 +23,28 @@ until cursor == "0"
 return 0
 `;
 
+const REMOVE_JOB_FROM_QUEUE_SCRIPT = `
+local queue = KEYS[1]
+local jid = ARGV[1]
+local batch_size = 1000
+local start = 0
+local len = redis.call('LLEN', queue)
+while start < len do
+  local end_idx = start + batch_size - 1
+  local jobs = redis.call('LRANGE', queue, start, end_idx)
+  if #jobs == 0 then break end
+  for i, job in ipairs(jobs) do
+    local success, parsed = pcall(cjson.decode, job)
+    if success and parsed.jid == jid then
+      redis.call('LREM', queue, 1, job)
+      return 1
+    end
+  end
+  start = start + batch_size
+end
+return 0
+`;
+
 export class SidekiqClient {
   constructor(private connectionManager: ConnectionManager) {}
 
@@ -460,7 +482,15 @@ export class SidekiqClient {
     pipeline.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'retry', job.id);
     pipeline.eval(REMOVE_JOB_BY_JID_SCRIPT, 1, 'dead', job.id);
     pipeline.lpush(`queue:${job.queue}`, JSON.stringify(jobData));
-    await pipeline.exec();
+    const results = await pipeline.exec();
+
+    if (results) {
+      for (const [err] of results) {
+        if (err) {
+          throw err;
+        }
+      }
+    }
   }
 
   async retryJobs(server: ServerConfig, jobs: Job[]): Promise<{ successCount: number; failCount: number }> {
@@ -497,15 +527,18 @@ export class SidekiqClient {
     }
 
     const results = await pipeline.exec();
+    if (!results) {
+      return { successCount: 0, failCount: jobs.length };
+    }
+
     let failCount = 0;
-    if (results) {
-      // Each job has 3 commands; check the lpush (3rd) for errors
-      for (let i = 0; i < jobs.length; i++) {
-        const lpushResult = results[i * 3 + 2];
-        if (lpushResult && lpushResult[0]) {
-          failCount++;
-          console.error(`Failed to retry job ${jobs[i].id}:`, lpushResult[0]);
-        }
+    // Each job has 3 commands (retry eval, dead eval, lpush); check all for errors
+    for (let i = 0; i < jobs.length; i++) {
+      const baseIndex = i * 3;
+      const hasError = results[baseIndex]?.[0] || results[baseIndex + 1]?.[0] || results[baseIndex + 2]?.[0];
+      if (hasError) {
+        failCount++;
+        console.error(`Failed to retry job ${jobs[i].id}:`, hasError);
       }
     }
 
@@ -518,42 +551,7 @@ export class SidekiqClient {
     // We need to find and delete the job by matching its ID
     switch (from) {
       case 'queue':
-        // Use Lua script to find and delete the job server-side
-        // This avoids transferring the entire queue content over the network
-        // We use chunked iteration to avoid loading the entire queue into memory at once
-        // This optimization drastically reduces client-side memory usage and network bandwidth
-        await redis.eval(
-          `
-            local queue = KEYS[1]
-            local jid = ARGV[1]
-            local batch_size = 1000
-            local start = 0
-            local len = redis.call('LLEN', queue)
-
-            while start < len do
-              local end_idx = start + batch_size - 1
-              local jobs = redis.call('LRANGE', queue, start, end_idx)
-
-              if #jobs == 0 then
-                break
-              end
-
-              for i, job in ipairs(jobs) do
-                local success, parsed = pcall(cjson.decode, job)
-                if success and parsed.jid == jid then
-                  redis.call('LREM', queue, 1, job)
-                  return 1
-                end
-              end
-
-              start = start + batch_size
-            end
-            return 0
-          `,
-          1,
-          `queue:${job.queue}`,
-          job.id
-        );
+        await redis.eval(REMOVE_JOB_FROM_QUEUE_SCRIPT, 1, `queue:${job.queue}`, job.id);
         break;
         
       case 'retry':
@@ -603,7 +601,9 @@ export class SidekiqClient {
       }
 
       const results = await pipeline.exec();
-      if (results) {
+      if (!results) {
+        failCount += sortedSetJobs.length;
+      } else {
         for (let i = 0; i < results.length; i++) {
           if (results[i][0]) {
             failCount++;
@@ -616,34 +616,15 @@ export class SidekiqClient {
     // Queue jobs use a heavier Lua script; pipeline them as well
     if (queueJobs.length > 0) {
       const pipeline = redis.pipeline();
-      const REMOVE_JOB_FROM_QUEUE_SCRIPT = `
-        local queue = KEYS[1]
-        local jid = ARGV[1]
-        local batch_size = 1000
-        local start = 0
-        local len = redis.call('LLEN', queue)
-        while start < len do
-          local end_idx = start + batch_size - 1
-          local jobs = redis.call('LRANGE', queue, start, end_idx)
-          if #jobs == 0 then break end
-          for i, job in ipairs(jobs) do
-            local success, parsed = pcall(cjson.decode, job)
-            if success and parsed.jid == jid then
-              redis.call('LREM', queue, 1, job)
-              return 1
-            end
-          end
-          start = start + batch_size
-        end
-        return 0
-      `;
 
       for (const { job } of queueJobs) {
         pipeline.eval(REMOVE_JOB_FROM_QUEUE_SCRIPT, 1, `queue:${job.queue}`, job.id);
       }
 
       const results = await pipeline.exec();
-      if (results) {
+      if (!results) {
+        failCount += queueJobs.length;
+      } else {
         for (let i = 0; i < results.length; i++) {
           if (results[i][0]) {
             failCount++;

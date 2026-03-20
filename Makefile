@@ -18,10 +18,10 @@ test:
 	npm run test
 
 package: compile
-	vsce package
+	npx vsce package
 
 publish: compile
-	vsce publish
+	npx vsce publish
 
 clean:
 	rm -rf dist *.vsix
