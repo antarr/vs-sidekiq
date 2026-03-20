@@ -308,7 +308,7 @@ export class SidekiqClient {
     }
 
     const [processErr, processData] = results[0] as [Error | null, any];
-    const [workErr, workData] = results[1] as [Error | null, string | null];
+    const [, workData] = results[1] as [Error | null, string | null];
 
     if (processErr || !processData || !processData.info) {
       console.warn(`No info found for worker ${workerId}`);

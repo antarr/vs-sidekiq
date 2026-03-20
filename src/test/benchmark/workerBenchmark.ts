@@ -1,4 +1,5 @@
 import { SidekiqClient } from '../../core/sidekiqClient';
+import { ConnectionManager } from '../../core/connectionManager';
 import { ServerConfig } from '../../data/models/server';
 
 // Mock Redis

@@ -112,7 +112,7 @@ async function runBenchmark() {
   const startLegacy = performance.now();
 
   const workers = await client.getWorkers(server);
-  const worker = workers.find(w => w.id === targetWorkerId);
+  workers.find(w => w.id === targetWorkerId);
 
   const endLegacy = performance.now();
   console.log(`Time: ${(endLegacy - startLegacy).toFixed(2)}ms`);
