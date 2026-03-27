@@ -663,16 +663,26 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
 
           if (processes.length > 0) {
             debugInfo.push('  - Active processes:');
+            const pipeline = redis.pipeline();
             for (const processId of processes) {
-              const processData = await redis.hgetall(processId);
-              if (processData.info) {
-                const info = JSON.parse(processData.info);
-                debugInfo.push(`    - ${processId}`);
-                debugInfo.push(`      Hostname: ${info.hostname}`);
-                debugInfo.push(`      PID: ${info.pid}`);
-                debugInfo.push(`      Tag: ${info.tag || 'none'}`);
-                debugInfo.push(`      Busy: ${processData.busy || 0}`);
-                debugInfo.push(`      Queues: ${info.queues.length} queues`);
+              pipeline.hgetall(processId);
+            }
+            const results = await pipeline.exec();
+
+            if (results) {
+              for (let i = 0; i < processes.length; i++) {
+                const processId = processes[i];
+                const [err, processData] = results[i] as [Error | null, any];
+
+                if (!err && processData && processData.info) {
+                  const info = JSON.parse(processData.info);
+                  debugInfo.push(`    - ${processId}`);
+                  debugInfo.push(`      Hostname: ${info.hostname}`);
+                  debugInfo.push(`      PID: ${info.pid}`);
+                  debugInfo.push(`      Tag: ${info.tag || 'none'}`);
+                  debugInfo.push(`      Busy: ${processData.busy || 0}`);
+                  debugInfo.push(`      Queues: ${info.queues.length} queues`);
+                }
               }
             }
           }
