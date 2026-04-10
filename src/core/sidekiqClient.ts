@@ -826,13 +826,27 @@ export class SidekiqClient {
 
   async deleteCronJob(server: ServerConfig, jobName: string): Promise<void> {
     const redis = await this.connectionManager.getConnection(server);
-    // Try different key patterns
-    const deleted1 = await redis.hdel('cron_jobs', jobName);
-    const deleted2 = await redis.hdel('sidekiq:cron_jobs', jobName);
-    const deleted3 = await redis.del(`cron_job:${jobName}`);
+    // Try different key patterns in a single pipeline to reduce network round-trips
+    const pipeline = redis.pipeline();
+    pipeline.hdel('cron_jobs', jobName);
+    pipeline.hdel('sidekiq:cron_jobs', jobName);
+    pipeline.del(`cron_job:${jobName}`);
+
+    const results = await pipeline.exec();
+
+    // Check if at least one delete was successful (count > 0)
+    let totalDeleted = 0;
+    if (results) {
+      for (const [err, res] of results) {
+        if (err) {
+          console.error(`Error deleting cron job ${jobName}:`, err);
+          continue;
+        }
+        totalDeleted += (res as number) || 0;
+      }
+    }
     
-    // At least one should have been deleted
-    if (!deleted1 && !deleted2 && !deleted3) {
+    if (totalDeleted === 0) {
       console.warn(`Cron job ${jobName} not found in any known location`);
     }
   }
