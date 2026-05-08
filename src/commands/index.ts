@@ -650,8 +650,8 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
           const workers = await redis.smembers('workers');
           const sidekiqWorkers = await redis.smembers('sidekiq:workers');
           const sidekiqProcesses = await redis.smembers('sidekiq:processes');
-          const workerKeys = await redis.keys('*worker*');
-          const queueKeys = await redis.keys('queue:*');
+          const workerKeys = await scanAll(redis, '*worker*');
+          const queueKeys = await scanAll(redis, 'queue:*');
 
           debugInfo.push('Redis Keys:');
           debugInfo.push(`  - Workers in 'processes' set (Sidekiq 6+): ${processes.length}`);
@@ -720,8 +720,31 @@ export function registerCommands(context: vscode.ExtensionContext, ctx: CommandC
       vscode.window.showInformationMessage('Views refreshed');
     })
   );
+}
 
-  /* Cron job commands disabled - focusing on core Sidekiq features
+/**
+ * Helper function to retrieve all keys matching a pattern using Redis SCAN
+ * to avoid blocking the server (as KEYS does).
+ */
+async function scanAll(redis: any, pattern: string): Promise<string[]> {
+  const keys: string[] = [];
+  let cursor = '0';
+
+  do {
+    // scan returns [cursor, keys[]]
+    const result = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 1000);
+    cursor = result[0];
+    const batchKeys = result[1];
+
+    if (batchKeys.length > 0) {
+      keys.push(...batchKeys);
+    }
+  } while (cursor !== '0');
+
+  return keys;
+}
+
+/* Cron job commands disabled - focusing on core Sidekiq features
   // Cron job commands
   context.subscriptions.push(
     vscode.commands.registerCommand('sidekiq.viewCronJob', async (cronJob: any) => {
