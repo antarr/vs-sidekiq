@@ -194,4 +194,55 @@ describe('SidekiqClient', () => {
             assert.strictEqual(worker, null);
         });
     });
+
+    describe('getQueue', () => {
+        it('should fetch single queue details using pipeline', async () => {
+            let pipelineCommands: Array<{ cmd: string, args: any[] }> = [];
+            const mockQueueName = 'test-queue';
+
+            const mockPipeline = {
+                llen: (key: string) => {
+                    pipelineCommands.push({ cmd: 'llen', args: [key] });
+                    return mockPipeline;
+                },
+                lindex: (key: string, index: number) => {
+                    pipelineCommands.push({ cmd: 'lindex', args: [key, index] });
+                    return mockPipeline;
+                },
+                sismember: (key: string, member: string) => {
+                    pipelineCommands.push({ cmd: 'sismember', args: [key, member] });
+                    return mockPipeline;
+                },
+                exec: () => {
+                    return Promise.resolve([
+                        [null, 42],
+                        [null, JSON.stringify({ enqueued_at: Date.now() / 1000 - 60 })],
+                        [null, 1] // paused
+                    ]);
+                }
+            };
+
+            const mockRedis = {
+                pipeline: () => mockPipeline
+            };
+
+            const mockConnectionManager = {
+                getConnection: () => Promise.resolve(mockRedis)
+            } as any;
+
+            const client = new SidekiqClient(mockConnectionManager);
+            const queue = await client.getQueue({} as ServerConfig, mockQueueName);
+
+            assert.strictEqual(queue.name, mockQueueName);
+            assert.strictEqual(queue.size, 42);
+            assert.ok(queue.latency >= 59);
+            assert.strictEqual(queue.paused, true);
+
+            assert.strictEqual(pipelineCommands.length, 3);
+            assert.strictEqual(pipelineCommands[0].cmd, 'llen');
+            assert.strictEqual(pipelineCommands[1].cmd, 'lindex');
+            assert.strictEqual(pipelineCommands[2].cmd, 'sismember');
+            assert.strictEqual(pipelineCommands[2].args[1], mockQueueName);
+        });
+    });
 });

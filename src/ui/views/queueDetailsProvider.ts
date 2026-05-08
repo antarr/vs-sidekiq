@@ -139,8 +139,7 @@ export class QueueDetailsProvider {
 
   private async getWebviewContent(server: ServerConfig, queue: Queue): Promise<string> {
     // Refresh queue data to get latest stats
-    const queues = await this.sidekiqClient.getQueues(server);
-    const updatedQueue = queues.find(q => q.name === queue.name) || queue;
+    const updatedQueue = await this.sidekiqClient.getQueue(server, queue.name);
 
     // Get jobs
     const jobs = await this.sidekiqClient.getQueueJobs(server, queue.name, 0, 99);
