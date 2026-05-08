@@ -124,6 +124,50 @@ export class SidekiqClient {
     return queues.sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  async getQueue(server: ServerConfig, queueName: string): Promise<Queue> {
+    const redis = await this.connectionManager.getConnection(server);
+    const pipeline = redis.pipeline();
+
+    pipeline.llen(`queue:${queueName}`);
+    pipeline.lindex(`queue:${queueName}`, -1);
+    pipeline.sismember('paused', queueName);
+
+    const results = await pipeline.exec();
+
+    if (!results) {
+      return { name: queueName, size: 0, latency: 0, paused: false };
+    }
+
+    const [sizeErr, sizeRes] = results[0];
+    const [jobErr, jobRes] = results[1];
+    const [pausedErr, pausedRes] = results[2];
+
+    if (sizeErr) throw sizeErr;
+    if (jobErr) throw jobErr;
+    if (pausedErr) throw pausedErr;
+
+    const size = sizeRes as number;
+    const paused = pausedRes === 1;
+    let latency = 0;
+
+    if (jobRes) {
+      try {
+        const data = JSON.parse(jobRes as string);
+        const enqueuedAt = data.enqueued_at || data.created_at;
+        latency = Math.max(0, Date.now() / 1000 - enqueuedAt);
+      } catch {
+        latency = 0;
+      }
+    }
+
+    return {
+      name: queueName,
+      size,
+      latency,
+      paused
+    };
+  }
+
   async getQueueJobs(server: ServerConfig, queueName: string, start = 0, stop = 99): Promise<Job[]> {
     const redis = await this.connectionManager.getConnection(server);
     const rawJobs = await redis.lrange(`queue:${queueName}`, start, stop);
